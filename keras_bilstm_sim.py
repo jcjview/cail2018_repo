@@ -6,6 +6,8 @@ w2vpath = '../baike.128.no_truncate.glove.txt'
 embedding_matrix_path = './matrix_glove.npy'
 kernel_name = "bilstm"
 word_index_path = "worddict.pkl"
+TRAIN_HDF5="train_hdf5.h5"
+import h5py
 import pandas as pd
 import numpy as np
 import keras
@@ -50,9 +52,19 @@ class F1ScoreCallback(Callback):
             # recall = recall_score(self.validation_data[2], y_predict)
             f1 = f1_score(self.validation_data[1], y_predict, average='macro')
             print("macro f1_score %.4f " % f1)
+            f2 = f1_score(self.validation_data[1], y_predict, average='micro')
+            print("micro f1_score %.4f " % f2)
+            # l=np.argmax(self.validation_data[1])
+            # p=np.argmax(y_predict)
+            # print(l.shape)
+            # print(p.shape)
+            # f1=f1_score(l, p, average='macro')
+            # print("macro f1_score %.4f " % f1)
+            # f2 = f1_score(l, p, average='micro')
+            # print("micro f1_score %.4f " % f2)
+            print("avg f1_score %.4f " % ((f1+f2)/2))
 
-            f1 = f1_score(self.validation_data[1], y_predict, average='micro')
-            print("micro f1_score %.4f " % f1)
+
 
 
 def get_model(embedding_matrix, nb_words):
@@ -64,7 +76,9 @@ def get_model(embedding_matrix, nb_words):
     # seq_embedding_layer = keras.layers.Bidirectional(keras.layers.GRU(256, recurrent_dropout=dr))
     seq_embedding_layer = keras.layers.Bidirectional(keras.layers.CuDNNGRU(256))
 
-    x = seq_embedding_layer(keras.layers.SpatialDropout1D(0.4)(words_embedding_layer(input_tensor)))
+    x = seq_embedding_layer(keras.layers.SpatialDropout1D(0.2)(words_embedding_layer(input_tensor)))
+    x = keras.layers.BatchNormalization()(x)
+    x = keras.layers.Dropout(dr)(x)
     x = keras.layers.Dense(1024, activation="relu")(x)
     x = keras.layers.Dropout(dr)(x)
     output_layer = keras.layers.Dense(class_num, activation="softmax")(x)
@@ -153,16 +167,25 @@ list_tokenized_text = tokenizer.texts_to_sequences(text)
 X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
 print('x shape',X_train.shape)
 nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
-print("accu_label", nb_words)
+print("nb_words", nb_words)
 embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
+outh5file = h5py.File(TRAIN_HDF5, 'w')
+outh5file.create_dataset('train_token', data=X_train)
+outh5file.create_dataset('train_label', data=y)
 
+# outh5file = h5py.File(TRAIN_HDF5, 'r')
+# X_train = outh5file['train_token']
+# test = outh5file['test_token']
+# y = outh5file['train_label']
+# embedding_matrix1 = np.load(embedding_matrix_path)
+# nb_words=MAX_FEATURES
 
 
 seed = 20180426
-cv_folds = 6
+cv_folds = 4
 from sklearn.model_selection import KFold
 
-skf = KFold(n_splits=cv_folds, random_state=seed, shuffle=False)
+skf = KFold(n_splits=cv_folds, random_state=seed, shuffle=True)
 pred_oob = np.zeros(shape=y.shape)
 # print(pred_oob.shape)
 count = 0
@@ -180,7 +203,7 @@ for ind_tr, ind_te in skf.split(X_train, y):
     print('y_train shape',y_train.shape)
     print('y_val shape',y_val.shape)
     model = get_model(embedding_matrix1, nb_words)
-    early_stopping = EarlyStopping(monitor='val_loss', patience=6, verbose=1)
+    early_stopping = EarlyStopping(monitor='val_loss', patience=10, verbose=1)
     bst_model_path = kernel_name + '_weight_%d_%s.h5' % (count, timeStr)
     csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
     model_checkpoint = ModelCheckpoint(bst_model_path, monitor='val_loss',
@@ -192,25 +215,28 @@ for ind_tr, ind_te in skf.split(X_train, y):
                      callbacks=[early_stopping, model_checkpoint,F1ScoreCallback()]
                      )
     predict=model.predict(x_val,batch_size=1024)
-    y_label_true = np.argmax(y_val[0])
-    print('y_label_true',y_label_true.shape)
-    predict_label_true = np.argmax(predict[0])
-    print('predict_label_true', predict.shape)
-    macro_f1 = f1_score(y_label_true, predict_label_true, average="macro")
-    micro_f1 = f1_score(y_label_true, predict_label_true, average="micro")
-    print("macro_f1", macro_f1)
-    print("micro_f1", micro_f1)
-    print(macro_f1/2+micro_f1/2)
-    pred_oob[ind_te]=predict
+    pred_oob[ind_te] = predict
+    # predict[predict > 0.5] = 1
+    # predict[predict < 0.5] = 0
+    # y_label_true = np.argmax(y_val)
+    # print('y_label_true',y_label_true.shape)
+    # predict_label_true = np.argmax(predict)
+    # print('predict_label_true', predict.shape)
+    # macro_f1 = f1_score(y_label_true, predict_label_true, average="macro")
+    # micro_f1 = f1_score(y_label_true, predict_label_true, average="micro")
+    # print("macro_f1", macro_f1)
+    # print("micro_f1", micro_f1)
+    # print(macro_f1/2+micro_f1/2)
+
     count+=1
     # break
 pred_oob[pred_oob>0.5]=1
 pred_oob[pred_oob<0.5]=0
 
-y_label_true = np.argmax(y[0])
-predict_label_true = argmax(pred_oob[0])
-macro_f1=f1_score(y_label_true,predict_label_true,average="macro")
-micro_f1=f1_score(y_label_true,predict_label_true,average="micro")
+# y_label_true = np.argmax(y)
+# predict_label_true =  np.argmax(pred_oob)
+macro_f1=f1_score(y,pred_oob,average="macro")
+micro_f1=f1_score(y,pred_oob,average="micro")
 print("macro_f1",macro_f1)
 print("micro_f1",micro_f1)
 print(macro_f1/2+micro_f1/2)
