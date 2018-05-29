@@ -23,7 +23,6 @@ fit_batch_size = 256
 fit_epoch = 22
 
 class_num = 202
-from keras import backend as K
 
 class F1ScoreCallback(Callback):
     def __init__(self, predict_batch_size=1024, include_on_batch=False):
@@ -35,34 +34,27 @@ class F1ScoreCallback(Callback):
         pass
 
     def on_train_begin(self, logs={}):
-        pass
+        if not ('avg_f1_score_val' in self.params['metrics']):
+            self.params['metrics'].append('avg_f1_score_val')
 
     def on_batch_end(self, batch, logs={}):
-        pass
+        if (self.include_on_batch):
+            logs['avg_f1_score_val'] = float('-inf')
 
     def on_epoch_end(self, epoch, logs={}):
+        logs['avg_f1_score_val'] = float('-inf')
         if (self.validation_data):
             y_predict = self.model.predict(self.validation_data[0],
                                            batch_size=self.predict_batch_size)
             y_predict[y_predict >= 0.5] = 1
             y_predict[y_predict < 0.5] = 0
-            # y_predict = (y_predict > 0.5).astype(int)
-            # accuracy = accuracy_score(self.validation_data[2], y_predict)
-            # precision = precision_score(self.validation_data[2], y_predict)
-            # recall = recall_score(self.validation_data[2], y_predict)
             f1 = f1_score(self.validation_data[1], y_predict, average='macro')
             print("macro f1_score %.4f " % f1)
             f2 = f1_score(self.validation_data[1], y_predict, average='micro')
             print("micro f1_score %.4f " % f2)
-            # l=np.argmax(self.validation_data[1])
-            # p=np.argmax(y_predict)
-            # print(l.shape)
-            # print(p.shape)
-            # f1=f1_score(l, p, average='macro')
-            # print("macro f1_score %.4f " % f1)
-            # f2 = f1_score(l, p, average='micro')
-            # print("micro f1_score %.4f " % f2)
-            print("avg f1_score %.4f " % ((f1+f2)/2))
+            avgf1=(f1 + f2) / 2
+            print("avg_f1_score %.4f " % (avgf1))
+            logs['avg_f1_score_val'] =avgf1
 
 
 
@@ -206,13 +198,13 @@ for ind_tr, ind_te in skf.split(X_train, y):
     early_stopping = EarlyStopping(monitor='val_loss', patience=10, verbose=1)
     bst_model_path = kernel_name + '_weight_%d_%s.h5' % (count, timeStr)
     csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
-    model_checkpoint = ModelCheckpoint(bst_model_path, monitor='val_loss',
+    model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val', mode='max',
                                        save_best_only=True, verbose=1, save_weights_only=False)
     hist = model.fit(x_train, y_train,
                      validation_data=(x_val, y_val),
                      epochs=fit_epoch, batch_size=fit_batch_size, shuffle=False,
                      verbose=1,
-                     callbacks=[early_stopping, model_checkpoint,F1ScoreCallback()]
+                     callbacks=[F1ScoreCallback(),early_stopping, model_checkpoint]
                      )
     predict=model.predict(x_val,batch_size=1024)
     pred_oob[ind_te] = predict
