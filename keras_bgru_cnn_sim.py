@@ -36,34 +36,27 @@ class F1ScoreCallback(Callback):
         pass
 
     def on_train_begin(self, logs={}):
-        pass
+        if not ('avg_f1_score_val' in self.params['metrics']):
+            self.params['metrics'].append('avg_f1_score_val')
 
     def on_batch_end(self, batch, logs={}):
-        pass
+        if (self.include_on_batch):
+            logs['avg_f1_score_val'] = float('-inf')
 
     def on_epoch_end(self, epoch, logs={}):
+        logs['avg_f1_score_val'] = float('-inf')
         if (self.validation_data):
             y_predict = self.model.predict(self.validation_data[0],
                                            batch_size=self.predict_batch_size)
             y_predict[y_predict >= 0.5] = 1
             y_predict[y_predict < 0.5] = 0
-            # y_predict = (y_predict > 0.5).astype(int)
-            # accuracy = accuracy_score(self.validation_data[2], y_predict)
-            # precision = precision_score(self.validation_data[2], y_predict)
-            # recall = recall_score(self.validation_data[2], y_predict)
             f1 = f1_score(self.validation_data[1], y_predict, average='macro')
             print("macro f1_score %.4f " % f1)
             f2 = f1_score(self.validation_data[1], y_predict, average='micro')
             print("micro f1_score %.4f " % f2)
-            # l=np.argmax(self.validation_data[1])
-            # p=np.argmax(y_predict)
-            # print(l.shape)
-            # print(p.shape)
-            # f1=f1_score(l, p, average='macro')
-            # print("macro f1_score %.4f " % f1)
-            # f2 = f1_score(l, p, average='micro')
-            # print("micro f1_score %.4f " % f2)
-            print("avg f1_score %.4f " % ((f1 + f2) / 2))
+            avgf1=(f1 + f2) / 2
+            print("avg_f1_score %.4f " % (avgf1))
+            logs['avg_f1_score_val'] =avgf1
 
 
 def get_model(embedding_matrix, nb_words):
@@ -147,36 +140,36 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
     return embedding_matrix
 
 
-# df = pd.read_csv(input_file, encoding="utf-8")
-# text = df['text'].values
-# label = df['accu_label'].values
-# from sklearn.preprocessing import LabelEncoder
-# # encode class values as integers
-# encoder = LabelEncoder()
-# encoded_Y = encoder.fit_transform(label)
-# # convert integers to dummy variables (one hot encoding)
-# y = keras.utils.to_categorical(encoded_Y,num_classes=class_num)
-# print('y shape',y.shape)
-# from keras.preprocessing.sequence import pad_sequences
-# from keras.preprocessing.text import Tokenizer
-#
-# tokenizer = Tokenizer(num_words=MAX_FEATURES)
-# tokenizer.fit_on_texts(list(text))
-# list_tokenized_text = tokenizer.texts_to_sequences(text)
-# X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
-# print('x shape',X_train.shape)
-# nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
-# print("nb_words", nb_words)
+df = pd.read_csv(input_file, encoding="utf-8")
+text = df['text'].values
+label = df['accu_label'].values
+from sklearn.preprocessing import LabelEncoder
+# encode class values as integers
+encoder = LabelEncoder()
+encoded_Y = encoder.fit_transform(label)
+# convert integers to dummy variables (one hot encoding)
+y = keras.utils.to_categorical(encoded_Y,num_classes=class_num)
+print('y shape',y.shape)
+from keras.preprocessing.sequence import pad_sequences
+from keras.preprocessing.text import Tokenizer
 
-outh5file = h5py.File(TRAIN_HDF5, 'r')
-X_train = outh5file['train_token']
-# test = outh5file['test_token']
-y = outh5file['train_label']
+tokenizer = Tokenizer(num_words=MAX_FEATURES)
+tokenizer.fit_on_texts(list(text))
+list_tokenized_text = tokenizer.texts_to_sequences(text)
+X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
+print('x shape',X_train.shape)
+nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
+print("nb_words", nb_words)
+
+# outh5file = h5py.File(TRAIN_HDF5, 'r')
+# X_train = outh5file['train_token']
+# # test = outh5file['test_token']
+# y = outh5file['train_label']
 
 X_train=np.array(X_train,copy=True)
 y=np.array(y,copy=True)
-# embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
-embedding_matrix1 = np.load(embedding_matrix_path)
+embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
+# embedding_matrix1 = np.load(embedding_matrix_path)
 nb_words = MAX_FEATURES
 
 seed = 20180426
@@ -209,7 +202,7 @@ for ind_tr, ind_te in skf.split(X_train, y):
                      validation_data=(x_val, y_val),
                      epochs=fit_epoch, batch_size=fit_batch_size, shuffle=False,
                      verbose=1,
-                     callbacks=[early_stopping, model_checkpoint, F1ScoreCallback()]
+                     callbacks=[F1ScoreCallback(),early_stopping, model_checkpoint ]
                      )
     predict = model.predict(x_val, batch_size=1024)
     pred_oob[ind_te] = predict
