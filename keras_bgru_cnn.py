@@ -65,8 +65,8 @@ def get_model(embedding_matrix, nb_words):
                                                    weights=[embedding_matrix],
                                                    input_length=MAX_TEXT_LENGTH,
                                                    trainable=False)
-    # seq_embedding_layer = keras.layers.Bidirectional(keras.layers.GRU(256, recurrent_dropout=dr))
-    seq_embedding_layer = keras.layers.Bidirectional(keras.layers.CuDNNGRU(256,return_sequences=True))
+    seq_embedding_layer = keras.layers.Bidirectional(keras.layers.GRU(256, recurrent_dropout=dr,return_sequences=True))
+    # seq_embedding_layer = keras.layers.Bidirectional(keras.layers.CuDNNGRU(256,return_sequences=True))
 
     x = seq_embedding_layer(keras.layers.SpatialDropout1D(0.2)(words_embedding_layer(input_tensor)))
     x = keras.layers.Conv1D(128, kernel_size=2, padding="valid", kernel_initializer="he_uniform")(x)
