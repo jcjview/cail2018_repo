@@ -67,7 +67,7 @@ def get_model(embedding_matrix, nb_words):
     input_tensor = Input(shape=(MAX_TEXT_LENGTH,), dtype='int32')
     embedding_layer = Embedding(MAX_FEATURES,
                                 embedding_dims,
-                                weights=[embedding_matrix],
+                                # weights=[embedding_matrix],
                                 input_length=MAX_TEXT_LENGTH,
                                 trainable=False)
     emb1 = embedding_layer(input_tensor)
