@@ -2,12 +2,13 @@
 from keras import Input
 from keras.layers import Embedding, SpatialDropout1D, Conv1D, GlobalAveragePooling1D, LSTM, BatchNormalization, merge, \
     Dense, PReLU, Dropout
-
-input_file = "../process_ngram.csv"
+#no pre embeded 0.7668
+input_file = "../process.csv"
 # SEP = "\t"
 SEP = ","
-w2vpath = '../baike.128.no_truncate.glove.txt'
-embedding_matrix_path = './matrix_glove.npy'
+w2vpath = '../Vectors51.txt'
+# w2vpath = '../baike.128.no_truncate.glove.txt'
+embedding_matrix_path = './matrix_glove51.npy'
 kernel_name = "cnn"
 word_index_path = "worddict.pkl"
 TRAIN_HDF5 = "train_hdf5.h5"
@@ -20,7 +21,7 @@ from sklearn.metrics import f1_score
 
 MAX_TEXT_LENGTH = 500
 MAX_FEATURES = 200000
-embedding_dims = 128
+embedding_dims = 200
 dr = 0.2
 dropout_p = 0.1
 fit_batch_size = 256
@@ -54,11 +55,11 @@ class F1ScoreCallback(Callback):
             y_predict[y_predict >= 0.5] = 1
             y_predict[y_predict < 0.5] = 0
             f1 = f1_score(self.validation_data[1], y_predict, average='macro')
-            print("macro f1_score %.4f " % f1)
+            # print("macro f1_score %.4f " % f1)
             f2 = f1_score(self.validation_data[1], y_predict, average='micro')
-            print("micro f1_score %.4f " % f2)
+            # print("micro f1_score %.4f " % f2)
             avgf1=(f1 + f2) / 2
-            print("avg_f1_score %.4f " % (avgf1))
+            # print("avg_f1_score %.4f " % (avgf1))
             logs['avg_f1_score_val'] =avgf1
 
 
