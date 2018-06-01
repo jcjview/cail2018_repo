@@ -1,9 +1,10 @@
 # input_file = "../input/process_10k.csv"
-input_file = "../process_ngram.csv"
+input_file = "../process.csv"
 # SEP = "\t"
 SEP = ","
-w2vpath = '../baike.128.no_truncate.glove.txt'
-embedding_matrix_path = './matrix_glove.npy'
+# w2vpath = '../baike.128.no_truncate.glove.txt'
+w2vpath = '../Vectors51.txt'
+embedding_matrix_path = './matrix_glove51.npy'
 kernel_name = "bgru_cnn"
 word_index_path = "worddict.pkl"
 TRAIN_HDF5 = "train_hdf5.h5"
@@ -16,7 +17,7 @@ from sklearn.metrics import f1_score
 
 MAX_TEXT_LENGTH = 300
 nb_words=MAX_FEATURES = 100000
-embedding_dims = 128
+embedding_dims = 200
 dr = 0.2
 dropout_p = 0.1
 fit_batch_size = 256
@@ -61,7 +62,7 @@ class F1ScoreCallback(Callback):
 def get_model(embedding_matrix, nb_words):
     input_tensor = keras.layers.Input(shape=(MAX_TEXT_LENGTH,))
     words_embedding_layer = keras.layers.Embedding(MAX_FEATURES, embedding_dims,
-                                                   # weights=[embedding_matrix],
+                                                   weights=[embedding_matrix],
                                                    input_length=MAX_TEXT_LENGTH,
                                                    trainable=False)
     # seq_embedding_layer = keras.layers.Bidirectional(keras.layers.GRU(256, recurrent_dropout=dr))
@@ -184,7 +185,7 @@ print('x_val shape', x_val.shape)
 print('y_train shape', y_train.shape)
 print('y_val shape', y_val.shape)
 model = get_model(embedding_matrix1, nb_words)
-early_stopping = EarlyStopping(monitor='val_loss', patience=12, verbose=1)
+early_stopping = EarlyStopping(monitor='avg_f1_score_val',mode='max',patience=5, verbose=1)
 bst_model_path = kernel_name + '_weight_valid_%s.h5' % timeStr
 csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
 model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val',mode='max',
