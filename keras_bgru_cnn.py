@@ -1,5 +1,5 @@
 # input_file = "../input/process_10k.csv"
-input_file = "../process.csv"
+input_file = "../process_ngram.csv"
 # SEP = "\t"
 SEP = ","
 w2vpath = '../baike.128.no_truncate.glove.txt'
@@ -61,9 +61,9 @@ class F1ScoreCallback(Callback):
 def get_model(embedding_matrix, nb_words):
     input_tensor = keras.layers.Input(shape=(MAX_TEXT_LENGTH,))
     words_embedding_layer = keras.layers.Embedding(MAX_FEATURES, embedding_dims,
-                                                   weights=[embedding_matrix],
+                                                   # weights=[embedding_matrix],
                                                    input_length=MAX_TEXT_LENGTH,
-                                                   trainable=True)
+                                                   trainable=False)
     # seq_embedding_layer = keras.layers.Bidirectional(keras.layers.GRU(256, recurrent_dropout=dr))
     seq_embedding_layer = keras.layers.Bidirectional(keras.layers.CuDNNGRU(256,return_sequences=True))
 
@@ -139,36 +139,36 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
     return embedding_matrix
 
 
-# df = pd.read_csv(input_file, encoding="utf-8")
-# text = df['text'].values
-# label = df['accu_label'].values
-# from sklearn.preprocessing import LabelEncoder
-# # encode class values as integers
-# encoder = LabelEncoder()
-# encoded_Y = encoder.fit_transform(label)
-# # convert integers to dummy variables (one hot encoding)
-# y = keras.utils.to_categorical(encoded_Y,num_classes=class_num)
-# print('y shape',y.shape)
-# from keras.preprocessing.sequence import pad_sequences
-# from keras.preprocessing.text import Tokenizer
-# tokenizer = Tokenizer(num_words=MAX_FEATURES)
-# tokenizer.fit_on_texts(list(text))
-# list_tokenized_text = tokenizer.texts_to_sequences(text)
-# X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
-# print('x shape',X_train.shape)
-# nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
-# print("nb_words", nb_words)
-# outh5file = h5py.File(TRAIN_HDF5, 'w')
-# outh5file.create_dataset('train_token', data=X_train)
-# outh5file.create_dataset('train_label', data=y)
+df = pd.read_csv(input_file, encoding="utf-8")
+text = df['text'].values
+label = df['accu_label'].values
+from sklearn.preprocessing import LabelEncoder
+# encode class values as integers
+encoder = LabelEncoder()
+encoded_Y = encoder.fit_transform(label)
+# convert integers to dummy variables (one hot encoding)
+y = keras.utils.to_categorical(encoded_Y,num_classes=class_num)
+print('y shape',y.shape)
+from keras.preprocessing.sequence import pad_sequences
+from keras.preprocessing.text import Tokenizer
+tokenizer = Tokenizer(num_words=MAX_FEATURES)
+tokenizer.fit_on_texts(list(text))
+list_tokenized_text = tokenizer.texts_to_sequences(text)
+X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
+print('x shape',X_train.shape)
+nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
+print("nb_words", nb_words)
+outh5file = h5py.File(TRAIN_HDF5, 'w')
+outh5file.create_dataset('train_token', data=X_train)
+outh5file.create_dataset('train_label', data=y)
+embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
 
-outh5file = h5py.File(TRAIN_HDF5, 'r')
-X_train = outh5file['train_token']
-y = outh5file['train_label']
-X_train=np.array(X_train,copy=True)
-y=np.array(y,copy=True)
-# embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
-embedding_matrix1 = np.load(embedding_matrix_path)
+# outh5file = h5py.File(TRAIN_HDF5, 'r')
+# X_train = outh5file['train_token']
+# y = outh5file['train_label']
+# X_train=np.array(X_train,copy=True)
+# y=np.array(y,copy=True)
+# embedding_matrix1 = np.load(embedding_matrix_path)
 
 import time
 
