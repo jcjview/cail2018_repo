@@ -220,7 +220,7 @@ print('x_val shape', x_val.shape)
 print('y_train shape', y_train.shape)
 print('y_val shape', y_val.shape)
 model = get_model(embedding_matrix1, nb_words)
-early_stopping = EarlyStopping(monitor='val_loss', patience=12, verbose=1)
+early_stopping = EarlyStopping(monitor='avg_f1_score_val', mode='max',patience=5, verbose=1)
 bst_model_path = kernel_name + '_weight_valid_%s.h5' % timeStr
 csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
 model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val',mode='max',

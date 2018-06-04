@@ -120,6 +120,9 @@ def get_model(embedding_matrix, nb_words):
     mse='mae'
     model.compile(loss=[loss1,loss1,loss1], optimizer='adam', metrics=["accuracy"])
     model.summary()
+    model_json = model.to_json()
+    with open("model.json", "w") as json_file:
+        json_file.write(model_json)
     return model
 
 
@@ -186,22 +189,22 @@ text = df['text'].values
 label = df['accu_label'].values
 from sklearn.preprocessing import LabelEncoder
 # encode class values as integers
-encoder = LabelEncoder()
-encoded_Y = encoder.fit_transform(label)
+# encoder = LabelEncoder()
+# encoded_Y = encoder.fit_transform(label)
 # convert integers to dummy variables (one hot encoding)
-y = keras.utils.to_categorical(encoded_Y,num_classes=class_num)
+y = keras.utils.to_categorical(label,num_classes=class_num)
 print('y shape',y.shape)
 
 law_label=df['law_label'].values
-law_label_encoder = LabelEncoder()
-law_label_encoded_Y = encoder.fit_transform(law_label)
-law_label_y = keras.utils.to_categorical(law_label_encoded_Y,num_classes=law_class_num)
+# law_label_encoder = LabelEncoder()
+# law_label_encoded_Y = encoder.fit_transform(law_label)
+law_label_y = keras.utils.to_categorical(law_label,num_classes=law_class_num)
 print('y shape',law_label_y.shape)
 
 time_label=df['time_label'].values
-time_label_encoder = LabelEncoder()
-time_label_encoded_Y = encoder.fit_transform(time_label)
-time_label_y = keras.utils.to_categorical(time_label_encoded_Y,num_classes=time_class_num)
+# time_label_encoder = LabelEncoder()
+# time_label_encoded_Y = encoder.fit_transform(time_label)
+time_label_y = keras.utils.to_categorical(time_label,num_classes=time_class_num)
 print('y shape',time_label_y.shape)
 
 print('y type',type(time_label[0]))
