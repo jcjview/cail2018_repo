@@ -1,7 +1,4 @@
 # input_file = "../input/process_10k.csv"
-from keras import Input
-from keras.layers import Embedding, SpatialDropout1D, Conv1D, GlobalAveragePooling1D, LSTM, BatchNormalization, merge, \
-    Dense, PReLU, Dropout
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 # no pre embeded 0.7668
@@ -11,16 +8,25 @@ SEP = ","
 w2vpath = '../Vectors51.txt'
 # w2vpath = '../baike.128.no_truncate.glove.txt'
 embedding_matrix_path = './matrix_glove.npy'
-kernel_name = "cnn1"
+kernel_name = "cnn"
 word_index_path = "worddict.pkl"
 TRAIN_HDF5 = "train_hdf5_200k_200.h5"
 
+from keras import Input
+from keras.preprocessing.sequence import pad_sequences
+from keras.preprocessing.text import Tokenizer
+from sklearn.preprocessing import MultiLabelBinarizer
+from keras.layers import Embedding, SpatialDropout1D, K
+import pickle
 import h5py
 import pandas as pd
 import numpy as np
 import keras
 from keras.callbacks import EarlyStopping, ModelCheckpoint, Callback
-from sklearn.metrics import f1_score, mean_absolute_error
+from sklearn.metrics import f1_score, confusion_matrix
+
+
+
 
 MAX_TEXT_LENGTH = 500
 MAX_FEATURES = 200000
@@ -28,11 +34,49 @@ embedding_dims = 200
 dr = 0.2
 dropout_p = 0.1
 fit_batch_size = 64
-fit_epoch = 40
+fit_epoch = 50
 
 class_num = 202
 law_class_num = 183
 time_class_num = 9
+
+import tensorflow as tf
+import keras.backend.tensorflow_backend as tfb
+
+POS_WEIGHT = 20  # multiplier for positive targets, needs to be tuned
+
+def weighted_binary_crossentropy(target, output):
+    """
+    Weighted binary crossentropy between an output tensor
+    and a target tensor. POS_WEIGHT is used as a multiplier
+    for the positive targets.
+
+    Combination of the following functions:
+    * keras.losses.binary_crossentropy
+    * keras.backend.tensorflow_backend.binary_crossentropy
+    * tf.nn.weighted_cross_entropy_with_logits
+    """
+    # transform back to logits
+    _epsilon = tfb._to_tensor(tfb.epsilon(), output.dtype.base_dtype)
+    output = tf.clip_by_value(output, _epsilon, 1 - _epsilon)
+    output = tf.log(output / (1 - output))
+    # compute weighted loss
+    loss = tf.nn.weighted_cross_entropy_with_logits(targets=target,
+                                                    logits=output,
+                                                    pos_weight=POS_WEIGHT)
+    return tf.reduce_mean(loss, axis=-1)
+
+
+def categorical_squared_hinge(y_true, y_pred):
+    """
+    hinge with 0.5*W^2 ,SVM
+    """
+    y_true = 2. * y_true - 1 # trans [0,1] to [-1,1]，注意这个，svm类别标签是-1和1
+    vvvv = K.maximum(1. - y_true * y_pred, 0.) # hinge loss，参考keras自带的hinge loss
+#    vvv = K.square(vvvv) # 文章《Deep Learning using Linear Support Vector Machines》有进行平方
+    vv = K.sum(vvvv, 1, keepdims=False)  #axis=len(y_true.get_shape()) - 1
+    v = K.mean(vv, axis=-1)
+    return v
 
 
 class F1ScoreCallback(Callback):
@@ -68,7 +112,7 @@ class F1ScoreCallback(Callback):
             logs['avg_f1_score_val'] = avgf1
 
 
-def get_model(embedding_matrix, nb_words):
+def get_model():
     input_tensor = Input(shape=(MAX_TEXT_LENGTH,), dtype='int32')
     embedding_layer = Embedding(MAX_FEATURES,
                                 embedding_dims,
@@ -114,17 +158,17 @@ def get_model(embedding_matrix, nb_words):
     x = keras.layers.Dense(300, activation='relu')(x)
     x = keras.layers.Dropout(0.2)(x)
     x = keras.layers.BatchNormalization()(x)
-    output_layer = keras.layers.Dense(class_num, activation="sigmoid")(x)
-    # output_law = keras.layers.Dense(law_class_num, activation="sigmoid")(x)
+    # output_layer = keras.layers.Dense(class_num, activation="sigmoid")(x)
+    output_layer = keras.layers.Dense(law_class_num, activation="sigmoid")(x)
     # output_time = keras.layers.Dense(time_class_num, activation="softmax")(x)
 
     model = keras.models.Model(input_tensor, output_layer)
-    loss1 = 'binary_crossentropy'
-    loss2 = 'categorical_crossentropy'
-    model.compile(loss=[loss1], optimizer='adam', metrics=["accuracy"])
+    loss2 = 'binary_crossentropy'
+    loss1 = 'categorical_crossentropy'
+    model.compile(loss=weighted_binary_crossentropy, optimizer='adam', metrics=["accuracy"])
     model.summary()
     model_json = model.to_json()
-    with open(kernel_name+ "_model1.json", "w") as json_file:
+    with open("model2.json", "w") as json_file:
         json_file.write(model_json)
     return model
 
@@ -144,8 +188,8 @@ def get_num_lines(file_path):
 
 
 def get_embedding_matrix(word_index, Emed_path, Embed_npy):
-    # if (os.path.exists(Embed_npy)):
-    #     return np.load(Embed_npy)
+    if (os.path.exists(Embed_npy)):
+        return np.load(Embed_npy)
     print('Indexing word vectors')
     embeddings_index = {}
     file_line = get_num_lines(Emed_path)
@@ -187,68 +231,64 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
     return embedding_matrix
 
 
-df = pd.read_csv(input_file, encoding="utf-8")
+df = pd.read_csv(input_file,compression='infer', encoding="utf-8")
 text = df['text'].values
 label = df['accu_label'].values
-from sklearn.preprocessing import MultiLabelBinarizer
 
-lb_y = MultiLabelBinarizer()
-label = [set([int(i) for i in str(row).split(";")]) for row in label]
-y = lb_y.fit_transform(label)
-print('y shape', y.shape)
+
+# lb_y = MultiLabelBinarizer()
+# label=[set([int(i) for i in str(row).split(";")]) for row in label]
+# y = lb_y.fit_transform(label)
+# print('y shape',y.shape)
 
 law_label = df['law_label'].values
 law_label = [set([int(i) for i in str(row).split(";")]) for row in law_label]
 lb_law = MultiLabelBinarizer()
-law_label_y = lb_law.fit_transform(law_label)
-print('law y shape', law_label_y.shape)
+y = lb_law.fit_transform(law_label)
+print('law y shape', y.shape)
 
 time_label = df['time_label'].values
 time_label_y = keras.utils.to_categorical(time_label, num_classes=time_class_num)
 print('y shape', time_label_y.shape)
-import pickle
-from keras.preprocessing.sequence import pad_sequences
-from keras.preprocessing.text import Tokenizer
 
 if (os.path.exists(TRAIN_HDF5)):
+    print('load h5')
     with open('tokenizer.pickle', 'rb') as handle:
         tokenizer = pickle.load(handle)
     outh5file = h5py.File(TRAIN_HDF5, 'r')
     X_train = outh5file['train_token']
-    y = outh5file['train_label']
-    # law_label_y = outh5file['train_label']
-    # time_label_y = outh5file['time_label_y']
+    # y = outh5file['train_label']
     nb_words = 0
     X_train = np.array(X_train, copy=True)
-    y = np.array(y, copy=True)
-    # law_label_y = np.array(law_label_y, copy=True)
-    # time_label_y = np.array(time_label_y, copy=True)
-    embedding_matrix1 = np.load(embedding_matrix_path)
+    # y = np.array(y, copy=True)
+    # embedding_matrix1 = np.load(embedding_matrix_path)
 else:
-
+    print('init')
     tokenizer = Tokenizer(num_words=MAX_FEATURES)
     tokenizer.fit_on_texts(list(text))
     list_tokenized_text = tokenizer.texts_to_sequences(text)
     X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
-    print('x shape', X_train.shape)
+    print('x shape',X_train.shape)
     nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
     print("nb_words", nb_words)
-    embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
+    # embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
     # saving
     with open('tokenizer.pickle', 'wb') as handle:
         pickle.dump(tokenizer, handle, protocol=pickle.HIGHEST_PROTOCOL)
     outh5file = h5py.File(TRAIN_HDF5, 'w')
     outh5file.create_dataset('train_token', data=X_train)
     outh5file.create_dataset('train_label', data=y)
-    outh5file.create_dataset('law_label_y', data=law_label_y)
-    outh5file.create_dataset('time_label_y', data=time_label_y)
-# import pickle
 
 
 import time
 
 timeStr = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
+
+
 from sklearn.utils import class_weight
+
+
+
 
 # idx = np.random.permutation(len(y))
 # X_train=X_train[idx]
@@ -260,49 +300,46 @@ split2 = -32508
 split = split1 + split2
 x_train = X_train[:split]
 y_train = y[:split]
-y_train2 = law_label_y[:split]
+# y_train2 = law_label_y[:split]
 y_train3 = time_label_y[:split]
 
 x_val = X_train[split:split2]
 y_val = y[split:split2]
-y_val2 = law_label_y[split:split2]
+# y_val2 = law_label_y[split:split2]
 y_val3 = time_label_y[split:split2]
 
 x_test = X_train[split2:]
 y_test = y[split2:]
-y_test2 = law_label_y[split2:]
+# y_test2 = law_label_y[split2:]
 y_tese3 = time_label_y[split2:]
 
 print('x_train shape', x_train.shape)
 print('x_val shape', x_val.shape)
 print('y_train shape', y_train.shape)
 print('y_val shape', y_val.shape)
-model = get_model(embedding_matrix1, nb_words)
+model = get_model()
 early_stopping = EarlyStopping(monitor='avg_f1_score_val', mode='max', patience=5, verbose=1)
-# bst_model_path = kernel_name + '_weight_valid_%s.h5' % timeStr
-bst_model_path = 'cnn_weight1.h5'
-csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
+bst_model_path = 'cnn_weight2.h5'#kernel_name + '_weight_valid_%s.h5' % timeStr
+csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + timeStr+'_log.csv', append=True, separator=';')
 model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val', mode='max',
                                    save_best_only=True, verbose=1, save_weights_only=True)
 hist = model.fit(x_train, y_train,
                  validation_data=(x_val, y_val),
                  epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
                  verbose=1,
-                 callbacks=[F1ScoreCallback(), early_stopping, model_checkpoint, csv_logger]
+                 # class_weight={1:2,0:0.5},
+                 callbacks=[F1ScoreCallback(), early_stopping, model_checkpoint]
                  )
 model.load_weights(bst_model_path)
-
-predict = model.predict(x_test, batch_size=1024)
-
+predict = model.predict(x_val, batch_size=1024)
 predict1 = np.array(predict, copy=True)
 predict1[predict1 > 0.5] = 1
 predict1[predict1 < 0.5] = 0
-macro_f1 = f1_score(y_test, predict1, average="macro")
-micro_f1 = f1_score(y_test, predict1, average="micro")
+macro_f1 = f1_score(y_val, predict1, average="macro")
+micro_f1 = f1_score(y_val, predict1, average="micro")
 print("macro_f1", macro_f1)
 print("micro_f1", micro_f1)
 print(macro_f1 / 2 + micro_f1 / 2)
-
 
 def predict2tag(predictions):
     y_pred = np.array(predictions, copy=True)
@@ -321,3 +358,52 @@ f2 = f1_score(y_test, y_pred, average='micro')
 print("micro f1_score %.4f " % f2)
 avgf1 = (f1 + f2) / 2
 print("avg_f1_score %.4f " % (avgf1))
+
+# tp = [1.0] * law_class_num
+# fp = [1.0] * law_class_num
+# fn = [1.0] * law_class_num
+# tn = [1.0] * law_class_num
+# acc = [0.0] * law_class_num
+# recall = [0.0] * law_class_num
+# f1 = [0.0] * law_class_num
+#
+# for i in range(law_class_num):
+#     tn[i], fp[i], fn[i], tp[i] = confusion_matrix(y_val[:, i], predict1[:, i]).ravel()
+#     acc[i] = tp[i] / (fp[i] + tp[i])
+#     recall[i] = tp[i] / (fn[i] + tp[i])
+#     f1[i] = 2 * acc[i] * recall[i] / (acc[i] + recall[i])
+# out = pd.DataFrame({'tp': tp, 'fp': fp, 'fn': fn, 'tn': tn, 'acc': acc, 'recall': recall, 'f1': f1})
+# out.to_csv('confusion_matrix2.csv', index=False)
+# accall=np.mean(acc)
+# recallall=np.mean(recall)
+# macro_f1=2*accall*recallall/(accall+recallall)
+#
+# accall=np.sum(tp)/(np.sum(fp)+np.sum(tp))
+# recallall=np.sum(tp)/(np.sum(fn)+np.sum(tp))
+# micro_f1=2*accall*recallall/(accall+recallall)
+# print("macro_f1", macro_f1)
+# print("micro_f1", micro_f1)
+# print(macro_f1 / 2 + micro_f1 / 2)
+#
+#
+# import numpy as np
+# import math
+#
+# # labels_dict : {ind_label: count_label}
+# # mu : parameter to tune
+#
+# def create_class_weight(labels_dict,mu=0.15):
+#     total = np.sum(labels_dict.values())
+#     keys = labels_dict.keys()
+#     class_weight = dict()
+#
+#     for key in keys:
+#         score = math.log(mu*total/float(labels_dict[key]))
+#         class_weight[key] = score if score > 1.0 else 1.0
+#
+#     return class_weight
+#
+# # random labels_dict
+# labels_dict = {0: 2813, 1: 78, 2: 2814, 3: 78, 4: 7914, 5: 248, 6: 7914, 7: 248}
+#
+# create_class_weight(labels_dict)
