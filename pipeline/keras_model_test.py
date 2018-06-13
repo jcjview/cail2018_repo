@@ -11,11 +11,9 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.preprocessing.sequence import pad_sequences
 from keras.preprocessing.text import Tokenizer
 from metric_fuc import predict2tag, get_embedding_matrix, F1ScoreCallback
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, confusion_matrix
 from sklearn.preprocessing import MultiLabelBinarizer
 from bgru_model import *
-from cnn_model import *
-from capsule_model import *
 
 def get_model(model_str='cnn_model1',embedding_matrix=None):
     m = eval(model_str)(embedding_matrix)
@@ -31,13 +29,12 @@ if (os.path.exists(TRAIN_HDF5)):
     outh5file = h5py.File(TRAIN_HDF5, 'r')
     X_train = outh5file['train_token']
     y_accu = outh5file['train_label']
-    law_label_y = outh5file['law_label_y']
+    law_label_y = outh5file['train_label']
     time_label_y = outh5file['time_label_y']
     nb_words = 0
     X_train = np.array(X_train, copy=True)
     y_accu = np.array(y_accu, copy=True)
     law_label_y = np.array(law_label_y, copy=True)
-    print('law y shape', law_label_y.shape)
     time_label_y = np.array(time_label_y, copy=True)
     embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
 else:
@@ -103,8 +100,10 @@ import sys
 model_name=sys.argv[1]
 print(model_name)
 
+weight_name=sys.argv[2]
+print(weight_name)
+
 if "2" in model_name:
-    print("2")
     y_train=y_train2
     y_val=y_val2
     y_test=y_test2
@@ -120,19 +119,21 @@ print('x_train shape', x_train.shape)
 print('x_val shape', x_val.shape)
 print('y_train shape', y_train.shape)
 print('y_val shape', y_val.shape)
-model = get_model(model_name,embedding_matrix1)
+with open(model_name) as fr:
+    model_json=fr.read()
+model = keras.models.model_from_json(model_json) #get_model(model_name,embedding_matrix1)
 early_stopping = EarlyStopping(monitor='avg_f1_score_val', mode='max', patience=5, verbose=1)
-bst_model_path = model_name + '_bestweight_valid_%s.h5' % timeStr
+bst_model_path = weight_name #model_name + '_bestweight_valid_%s.h5' % timeStr
 # bst_model_path = 'cnn_weight1.h5'
 csv_logger = keras.callbacks.CSVLogger('./log/' + model_name + '_log.csv', append=True, separator=';')
 model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val', mode='max',
                                    save_best_only=True, verbose=1, save_weights_only=True)
-hist = model.fit(x_train, y_train,
-                 validation_data=(x_val, y_val),
-                 epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
-                 verbose=1,
-                 callbacks=[F1ScoreCallback(), early_stopping, model_checkpoint, csv_logger]
-                 )
+# hist = model.fit(x_train, y_train,
+#                  validation_data=(x_val, y_val),
+#                  epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
+#                  verbose=1,
+#                  callbacks=[F1ScoreCallback(), early_stopping, model_checkpoint, csv_logger]
+#                  )
 model.load_weights(bst_model_path)
 
 predict = model.predict(x_test, batch_size=1024)
@@ -156,5 +157,22 @@ print("micro f1_score %.4f " % f2)
 avgf1 = (f1 + f2) / 2
 print("avg_f1_score %.4f " % (avgf1))
 
-bst_model_path=model_name+"test_%.5f"%avgf1
-model.save_weights(bst_model_path)
+
+tp = [1.0] * class_num
+fp = [1.0] * class_num
+fn = [1.0] * class_num
+tn = [1.0] * class_num
+acc = [0.0] * class_num
+recall = [0.0] * class_num
+f1 = [0.0] * class_num
+
+for i in range(law_class_num):
+    tn[i], fp[i], fn[i], tp[i] = confusion_matrix(y_val[:, i], predict1[:, i]).ravel()
+    acc[i] = tp[i] / (fp[i] + tp[i])
+    recall[i] = tp[i] / (fn[i] + tp[i])
+    f1[i] = 2 * acc[i] * recall[i] / (acc[i] + recall[i])
+out = pd.DataFrame({'tp': tp, 'fp': fp, 'fn': fn, 'tn': tn, 'acc': acc, 'recall': recall, 'f1': f1})
+out.to_csv('confusion_matrix2.csv', index=False)
+accall=np.mean(acc)
+recallall=np.mean(recall)
+macro_f1=2*accall*recallall/(accall+recallall)

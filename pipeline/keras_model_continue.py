@@ -102,7 +102,8 @@ import sys
 
 model_name=sys.argv[1]
 print(model_name)
-
+weight_name=sys.argv[2]
+print(weight_name)
 if "2" in model_name:
     print("2")
     y_train=y_train2
@@ -121,6 +122,7 @@ print('x_val shape', x_val.shape)
 print('y_train shape', y_train.shape)
 print('y_val shape', y_val.shape)
 model = get_model(model_name,embedding_matrix1)
+model.load_weights(weight_name)
 early_stopping = EarlyStopping(monitor='avg_f1_score_val', mode='max', patience=5, verbose=1)
 bst_model_path = model_name + '_bestweight_valid_%s.h5' % timeStr
 # bst_model_path = 'cnn_weight1.h5'
@@ -155,6 +157,3 @@ f2 = f1_score(y_test, y_pred, average='micro')
 print("micro f1_score %.4f " % f2)
 avgf1 = (f1 + f2) / 2
 print("avg_f1_score %.4f " % (avgf1))
-
-bst_model_path=model_name+"test_%.5f"%avgf1
-model.save_weights(bst_model_path)
