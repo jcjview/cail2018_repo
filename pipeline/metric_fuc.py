@@ -6,7 +6,7 @@ from sklearn.metrics import f1_score
 from tqdm import tqdm
 
 from config import *
-
+import os
 
 def predict2half(predictions):
     y_pred = np.zeros(predictions.shape)
@@ -65,8 +65,8 @@ def get_num_lines(file_path):
 
 
 def get_embedding_matrix(word_index, Emed_path, Embed_npy):
-    # if (os.path.exists(Embed_npy)):
-    #     return np.load(Embed_npy)
+    if (os.path.exists(Embed_npy)):
+        return np.load(Embed_npy)
     print('Indexing word vectors')
     embeddings_index = {}
     file_line = get_num_lines(Emed_path)

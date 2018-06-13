@@ -8,7 +8,7 @@ from config import *
 dr = 0.2
 dropout_p = 0.1
 
-def cnn_model1():
+def cnn_model1(embedding_matrix):
     input_tensor = Input(shape=(MAX_TEXT_LENGTH,), dtype='int32')
     embedding_layer = Embedding(MAX_FEATURES,
                                 embedding_dims,
