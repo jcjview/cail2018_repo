@@ -8,11 +8,12 @@ from config import *
 dr = 0.2
 dropout_p = 0.1
 
+
 def cnn_model1(embedding_matrix):
     input_tensor = Input(shape=(MAX_TEXT_LENGTH,), dtype='int32')
     embedding_layer = Embedding(MAX_FEATURES,
                                 embedding_dims,
-                                # weights=[embedding_matrix],
+                                weights=[embedding_matrix],
                                 input_length=MAX_TEXT_LENGTH,
                                 trainable=False)
     emb1 = embedding_layer(input_tensor)
@@ -63,11 +64,12 @@ def cnn_model1(embedding_matrix):
         json_file.write(model_json)
     return model
 
-def cnn_model2():
+
+def cnn_model2(embedding_matrix):
     input_tensor = Input(shape=(MAX_TEXT_LENGTH,), dtype='int32')
     embedding_layer = Embedding(MAX_FEATURES,
                                 embedding_dims,
-                                # weights=[embedding_matrix],
+                                weights=[embedding_matrix],
                                 input_length=MAX_TEXT_LENGTH,
                                 trainable=False)
     emb1 = embedding_layer(input_tensor)
@@ -121,11 +123,12 @@ def cnn_model2():
         json_file.write(model_json)
     return model
 
-def cnn_model3():
+
+def cnn_model3(embedding_matrix):
     input_tensor = Input(shape=(MAX_TEXT_LENGTH,), dtype='int32')
     embedding_layer = Embedding(MAX_FEATURES,
                                 embedding_dims,
-                                # weights=[embedding_matrix],
+                                weights=[embedding_matrix],
                                 input_length=MAX_TEXT_LENGTH,
                                 trainable=False)
     emb1 = embedding_layer(input_tensor)
@@ -169,12 +172,14 @@ def cnn_model3():
     x = BatchNormalization()(x)
     # output_layer = Dense(class_num, activation="sigmoid")(x)
     # output_law = Dense(law_class_num, activation="sigmoid")(x)
-    output_layer = Dense(time_class_num, activation="softmax")(x)
+    output_layer = Dense(1, activation="linear")(x)
+    output_layer2 = Dense(1, activation="sigmoid",name='death')(x)
+    output_layer3 = Dense(1, activation="sigmoid",name='life')(x)
 
-    model = Model(input_tensor, output_layer)
-    # loss1 = 'binary_crossentropy'
-    loss2 = 'categorical_crossentropy'
-    model.compile(loss=loss2, optimizer='adam', metrics=["accuracy"])
+    model = Model(input_tensor, [output_layer,output_layer2,output_layer3])
+    loss1 = 'binary_crossentropy'
+    loss2 = 'mse'
+    model.compile(loss=[loss2,loss1,loss1], optimizer='adam', metrics=["accuracy"])
     model.summary()
     model_json = model.to_json()
     with open("cnn_model3.json", "w") as json_file:

@@ -1,18 +1,75 @@
 from keras.engine import Layer
-
-kernel_name = "capsule"
-import keras
 from keras import Input, Model
 from keras.layers import Embedding, SpatialDropout1D, Flatten, CuDNNGRU, BatchNormalization, Dense, \
     Dropout, Bidirectional, K, Activation
 
 from config import *
+kernel_name = "capsule"
 
 dropout_p=0.2
 gru_len=256
 Num_capsule = 16
 Dim_capsule = 32
 Routings = 5
+
+
+def capsule_model3(embedding_matrix):
+    input1 = Input(shape=(MAX_TEXT_LENGTH,))
+    embed_layer = Embedding(MAX_FEATURES,
+                            embedding_dims,
+                            input_length=MAX_TEXT_LENGTH,
+                            weights=[embedding_matrix],
+                            trainable=False)(input1)
+    embed_layer = SpatialDropout1D(dropout_p)(embed_layer)
+    x = Bidirectional(
+        CuDNNGRU(gru_len, return_sequences=True))(
+        embed_layer)
+    capsule = Capsule(num_capsule=Num_capsule, dim_capsule=Dim_capsule, routings=Routings,
+                      share_weights=True)(x)
+    # output_capsule = Lambda(lambda x: K.sqrt(K.sum(K.square(x), 2)))(capsule)
+    capsule = Flatten()(capsule)
+    capsule = Dropout(dropout_p)(capsule)
+    output_layer = Dense(1, activation="linear")(x)
+    output_layer2 = Dense(1, activation="sigmoid",name='death')(x)
+    output_layer3 = Dense(1, activation="sigmoid",name='life')(x)
+
+    model = Model(input1, [output_layer,output_layer2,output_layer3])
+    loss1 = 'binary_crossentropy'
+    loss2 = 'mse'
+    model.compile(loss=[loss2,loss1,loss1], optimizer='adam', metrics=["accuracy"])
+    model.summary()
+    model_json = model.to_json()
+    with open(kernel_name + "_model3.json", "w") as json_file:
+        json_file.write(model_json)
+    return model
+
+def capsule_model2(embedding_matrix):
+    input1 = Input(shape=(MAX_TEXT_LENGTH,))
+    embed_layer = Embedding(MAX_FEATURES,
+                            embedding_dims,
+                            input_length=MAX_TEXT_LENGTH,
+                            weights=[embedding_matrix],
+                            trainable=False)(input1)
+    embed_layer = SpatialDropout1D(dropout_p)(embed_layer)
+    x = Bidirectional(
+        CuDNNGRU(gru_len, return_sequences=True))(
+        embed_layer)
+    capsule = Capsule(num_capsule=Num_capsule, dim_capsule=Dim_capsule, routings=Routings,
+                      share_weights=True)(x)
+    # output_capsule = Lambda(lambda x: K.sqrt(K.sum(K.square(x), 2)))(capsule)
+    capsule = Flatten()(capsule)
+    capsule = Dropout(dropout_p)(capsule)
+    output = Dense(law_class_num, activation='sigmoid')(capsule)
+    model = Model(inputs=input1, outputs=output)
+    model.compile(
+        loss='binary_crossentropy',
+        optimizer='adam',
+        metrics=['accuracy'])
+    model.summary()
+    model_json = model.to_json()
+    with open("capsule_model1.json", "w") as json_file:
+        json_file.write(model_json)
+    return model
 
 def capsule_model1(embedding_matrix):
     input1 = Input(shape=(MAX_TEXT_LENGTH,))
