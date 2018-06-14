@@ -42,6 +42,36 @@ def capsule_model1(embedding_matrix):
         json_file.write(model_json)
     return model
 
+def capsule_model2(embedding_matrix):
+    input1 = Input(shape=(MAX_TEXT_LENGTH,))
+    embed_layer = Embedding(MAX_FEATURES,
+                            embedding_dims,
+                            input_length=MAX_TEXT_LENGTH,
+                            weights=[embedding_matrix],
+                            trainable=False)(input1)
+    embed_layer = SpatialDropout1D(dropout_p)(embed_layer)
+    x = Bidirectional(
+        CuDNNGRU(gru_len, return_sequences=True))(
+        embed_layer)
+    capsule = Capsule(num_capsule=Num_capsule, dim_capsule=Dim_capsule, routings=Routings,
+                      share_weights=True)(x)
+    # output_capsule = Lambda(lambda x: K.sqrt(K.sum(K.square(x), 2)))(capsule)
+    capsule = Flatten()(capsule)
+    capsule = Dropout(dropout_p)(capsule)
+    output = Dense(law_class_num, activation='sigmoid')(capsule)
+    model = Model(inputs=input1, outputs=output)
+    model.compile(
+        loss='binary_crossentropy',
+        optimizer='adam',
+        metrics=['accuracy'])
+    model.summary()
+
+    model_json = model.to_json()
+    with open("capsule_model1.json", "w") as json_file:
+        json_file.write(model_json)
+    return model
+
+
 def squash(x, axis=-1):
     # s_squared_norm is really small
     # s_squared_norm = K.sum(K.square(x), axis, keepdims=True) + K.epsilon()
