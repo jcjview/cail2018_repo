@@ -16,8 +16,8 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from bgru_model import *
 from cnn_model import *
 from capsule_model import *
-
-
+from attention import *
+os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 def get_model(model_str='cnn_model1', embedding_matrix=None):
     m = eval(model_str)(embedding_matrix)
     return m
@@ -127,6 +127,9 @@ if "3" in model_name:
     y_val = [y_val3,y_testd3,y_testl3]
     y_test = [y_test3,y_testd3,y_testl3]
 
+# x_train=np.concatenate((x_train,x_test))
+# y_train=np.concatenate((y_train,y_test))
+
 train_weight = np.zeros((y_train.shape[0],), np.float32)
 for i in range(0, y_train.shape[0]):
     count = np.sum(y_train[i])
@@ -184,5 +187,5 @@ print("micro f1_score %.4f " % f2)
 avgf1 = (f1 + f2) / 2
 print("avg_f1_score %.4f " % (avgf1))
 
-bst_model_path = model_name + "test_%.5f" % avgf1
+bst_model_path = model_name + "test_%.5f.h5" % avgf1
 model.save_weights(bst_model_path)
