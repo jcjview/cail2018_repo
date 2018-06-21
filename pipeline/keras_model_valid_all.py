@@ -17,6 +17,7 @@ from bgru_model import *
 from cnn_model import *
 from capsule_model import *
 from attention import *
+from keras_tqdm import TQDMCallback
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 def get_model(model_str='cnn_model1', embedding_matrix=None):
     m = eval(model_str)(embedding_matrix)
@@ -129,29 +130,32 @@ if "3" in model_name:
 
 # x_train=np.concatenate((x_train,x_test))
 # y_train=np.concatenate((y_train,y_test))
-
-train_weight = np.zeros((y_train.shape[0],), np.float32)
-for i in range(0, y_train.shape[0]):
-    count = np.sum(y_train[i])
-    if count >= 6:
-        train_weight[i] = 0.1
-    elif count == 5:
-        train_weight[i] = 0.7
-    elif count == 4:
-        train_weight[i] = 0.8
-    elif count == 3:
-        train_weight[i] = 0.9
-    elif count == 2:
-        train_weight[i] = 1.2
-    elif count == 1:
-        train_weight[i] = 1.2
-    else:
-        train_weight[i] = 0.1
-
 print('x_train shape', x_train.shape)
 print('x_val shape', x_val.shape)
 print('y_train shape', y_train.shape)
 print('y_val shape', y_val.shape)
+
+class_list=[156,173,197,184,104,105,123,40,26,171,32,96,193,114,21,180,186,42,31,143,195,29,136,44,90,37,28,131,49,77,174,199]
+train_sample_weight = np.zeros((y_train.shape[0],), np.float32)
+df = pd.read_csv(input_file, compression='infer', encoding="utf-8")
+label = df['accu_label'].values
+label = [set([int(i) for i in str(row).split(";")]) for row in label]
+lb_y = MultiLabelBinarizer()
+lb_y.fit_transform(label)
+# print(lb_y.classes_)
+array_label=lb_y.inverse_transform(y_train)
+# print(array_label[0])
+for i in range(0, y_train.shape[0]):
+    train_sample_weight[i] = 1
+    for l in array_label[i]:
+        if l in class_list:
+            print(l)
+            train_sample_weight[i] = 2
+            break
+np.savetxt("train_sample_weight.txt",train_sample_weight)
+# from sklearn.utils import class_weight
+# train_sample_weight = class_weight.compute_sample_weight('balanced', y_train)
+
 
 early_stopping = EarlyStopping(monitor='avg_f1_score_val', mode='max', patience=5, verbose=1)
 bst_model_path = model_name + '_bestweight_valid_%s.h5' % timeStr
@@ -162,9 +166,9 @@ model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val', m
 hist = model.fit(x_train, y_train,
                  validation_data=(x_val, y_val),
                  epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
-                 verbose=1,
-                 callbacks=[F1ScoreCallback(), early_stopping, model_checkpoint, csv_logger],
-                 # sample_weight=train_weight,
+                 verbose=2,
+                 callbacks=[TQDMCallback(),F1ScoreCallback(), early_stopping, model_checkpoint, csv_logger],
+                 sample_weight=train_sample_weight,
                  )
 model.load_weights(bst_model_path)
 
