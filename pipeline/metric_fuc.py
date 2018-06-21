@@ -26,11 +26,11 @@ def predict2tag(predictions):
 
 
 class F1ScoreCallback(Callback):
-    def __init__(self, predict_batch_size=1024, include_on_batch=False):
+    def __init__(self, predict_batch_size=1024, include_on_batch=False,data_test=None):
         super(F1ScoreCallback, self).__init__()
         self.predict_batch_size = predict_batch_size
         self.include_on_batch = include_on_batch
-
+        self.data_test=data_test;
     def on_batch_begin(self, batch, logs={}):
         pass
 
@@ -55,7 +55,17 @@ class F1ScoreCallback(Callback):
             avgf1 = (f1 + f2) / 2
             # print("avg_f1_score %.4f " % (avgf1))
             logs['avg_f1_score_val'] = avgf1
-
+        if(self.data_test):
+            predict = self.model.predict(self.data_test[0],
+                                         batch_size=self.predict_batch_size)
+            y_predict = predict2tag(predict)
+            f1 = f1_score(self.data_test[1], y_predict, average='macro')
+            print("test macro f1_score %.4f " % f1)
+            f2 = f1_score(self.data_test[1], y_predict, average='micro')
+            print("test micro f1_score %.4f " % f2)
+            avgf1 = (f1 + f2) / 2
+            print("test avg_f1_score %.4f " % (avgf1))
+            logs['avgf1_test'] = avgf1
 
 def get_num_lines(file_path):
     fp = open(file_path, "r+")
