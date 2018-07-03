@@ -33,8 +33,6 @@ if (os.path.exists(TRAIN_HDF5)):
     print('load tokenizer,train')
     with open('tokenizer.pickle', 'rb') as handle:
         tokenizer = pickle.load(handle)
-    with open('lb_y.pickle', 'rb') as handle:
-        lb_y = pickle.load(handle)
     outh5file = h5py.File(TRAIN_HDF5, 'r')
     All_train = outh5file['train_token']
     y_accu = outh5file['train_label']
@@ -82,9 +80,6 @@ else:
     print("nb_words", nb_words)
     embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
     # saving
-    with open('lb_y.pickle', 'wb') as handle:
-        pickle.dump(lb_y, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
     with open('tokenizer.pickle', 'wb') as handle:
         pickle.dump(tokenizer, handle, protocol=pickle.HIGHEST_PROTOCOL)
     outh5file = h5py.File(TRAIN_HDF5, 'w')
@@ -95,7 +90,7 @@ else:
     outh5file.create_dataset('time_death_y', data=time_death_y)
     outh5file.create_dataset('time_life_y', data=time_life_y)
 
-timeStr = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
+timeStr = '2018-06-30_14:36:04'#time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
 
 split1 = -17131
 split2 = -32508
@@ -121,6 +116,8 @@ y_test3 = time_label_y[split2:]
 y_testd3 = time_death_y[split2:]
 y_testl3 = time_life_y[split2:]
 
+if "1" in model_name:
+    print(1)
 
 
 # if "2" in model_name:
@@ -140,16 +137,16 @@ print('X_train shape', X_train.shape)
 print('x_val shape', x_val.shape)
 print('y_train shape', y_train.shape)
 print('y_val shape', y_val.shape)
-# df = pd.read_csv(input_file, compression='infer', encoding="utf-8")
-# label = df['accu_label'].values
-# label = [set([int(i) for i in str(row).split(";")]) for row in label]
-# lb_y = MultiLabelBinarizer()
-lb_y.fit_transform(label)
+#df = pd.read_csv(input_file, compression='infer', encoding="utf-8")
+#label = df['accu_label'].values
+#label = [set([int(i) for i in str(row).split(";")]) for row in label]
+#lb_y = MultiLabelBinarizer()
+#lb_y.fit_transform(label)
 
 class_list=[156,173,197,184,104,105,123,40,26,171,32,96,193,114,21,180,186,42,31,143,195,29,136,44,90,37,28,131,49,77,174,199]
 
 seed = 20180626
-cv_folds = 5
+cv_folds = 10
 from sklearn.model_selection import KFold
 
 skf = KFold(n_splits=cv_folds, random_state=seed, shuffle=True)
@@ -167,14 +164,14 @@ for ind_tr, ind_te in skf.split(X_train, y_train):
     x_v1=np.concatenate((x_v,x_val))
     y_v1=np.concatenate((y_v,y_val))
 
-    train_sample_weight = np.zeros((y_tr.shape[0],), np.float32)
-    array_label = lb_y.inverse_transform(y_train)
-    for i in range(0, y_tr.shape[0]):
-        train_sample_weight[i] = 1
-        for l in array_label[i]:
-            if l in class_list:
-                train_sample_weight[i] = 2
-                break
+#    train_sample_weight = np.zeros((y_tr.shape[0],), np.float32)
+#array_label = lb_y.inverse_transform(y_train)
+#for i in range(0, y_tr.shape[0]):
+#        train_sample_weight[i] = 1
+#        for l in array_label[i]:
+#            if l in class_list:
+#                train_sample_weight[i] = 2
+#                break
 
     model = get_model(model_name, embedding_matrix1)
     early_stopping = EarlyStopping(monitor='avg_f1_score_val', mode='max', patience=10, verbose=1)
@@ -182,24 +179,26 @@ for ind_tr, ind_te in skf.split(X_train, y_train):
     csv_logger = keras.callbacks.CSVLogger('./log/' + model_name + '_log.csv', append=True, separator=';')
     model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val', mode='max',
                                        save_best_only=True, verbose=1, save_weights_only=True)
+    print("model_"+bst_model_path)
     hist = model.fit(x_tr, y_tr,
                      validation_data=(x_v1, y_v1),
                      epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
                      verbose=2,
                      callbacks=[F1ScoreCallback(data_test=(x_test,y_test)), early_stopping, model_checkpoint, csv_logger],
-                     sample_weight=train_sample_weight,
+                     # sample_weight=train_sample_weight,
                      )
+    count += 1
     model.load_weights(bst_model_path)
     model.save("model_"+bst_model_path)
-    predict = model.predict(x_v, batch_size=1024)
+    predict = model.predict(x_v, batch_size=1024,verbose=2)
     pred_oob[ind_te] = predict
     p_test = model.predict(x_test, batch_size=1024)
-    pred_test += y_test
+    pred_test += p_test
 #print cv score
 y_pred = predict2tag(pred_oob)
-f1 = f1_score(y_test, y_pred, average='macro')
+f1 = f1_score(y_train, y_pred, average='macro')
 print("cv macro f1_score %.4f " % f1)
-f2 = f1_score(y_test, y_pred, average='micro')
+f2 = f1_score(y_train, y_pred, average='micro')
 print("cv micro f1_score %.4f " % f2)
 cvavgf1 = (f1 + f2) / 2
 print("cv avg_f1_score %.4f " % (cvavgf1))
