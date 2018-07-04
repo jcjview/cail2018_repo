@@ -1,4 +1,5 @@
 import mmap
+import os
 
 import numpy as np
 from keras.callbacks import Callback
@@ -6,7 +7,6 @@ from sklearn.metrics import f1_score
 from tqdm import tqdm
 
 from config import *
-import os
 
 
 def predict2half(predictions):
@@ -26,11 +26,12 @@ def predict2tag(predictions):
 
 
 class F1ScoreCallback(Callback):
-    def __init__(self, predict_batch_size=1024, include_on_batch=False,data_test=None):
+    def __init__(self, predict_batch_size=1024, include_on_batch=False, data_test=None):
         super(F1ScoreCallback, self).__init__()
         self.predict_batch_size = predict_batch_size
         self.include_on_batch = include_on_batch
-        self.data_test=data_test;
+        self.data_test = data_test;
+
     def on_batch_begin(self, batch, logs={}):
         pass
 
@@ -55,7 +56,7 @@ class F1ScoreCallback(Callback):
             avgf1 = (f1 + f2) / 2
             # print("avg_f1_score %.4f " % (avgf1))
             logs['avg_f1_score_val'] = avgf1
-        if(self.data_test):
+        if (self.data_test):
             predict = self.model.predict(self.data_test[0],
                                          batch_size=self.predict_batch_size)
             y_predict = predict2tag(predict)
@@ -66,6 +67,7 @@ class F1ScoreCallback(Callback):
             avgf1 = (f1 + f2) / 2
             print("test avg_f1_score %.4f " % (avgf1))
             logs['avgf1_test'] = avgf1
+
 
 def get_num_lines(file_path):
     fp = open(file_path, "r+")
@@ -81,10 +83,10 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
         return np.load(Embed_npy)
     print('Indexing word vectors')
     embeddings_index = {}
-    file_line = get_num_lines(Emed_path)
-    print('lines ', file_line)
+    # file_line = get_num_lines(Emed_path)
+    # print('lines ', file_line)
     with open(Emed_path, encoding='utf-8') as f:
-        for line in tqdm(f, total=file_line):
+        for line in f:
             values = line.split()
             if (len(values) < embedding_dims):
                 print(values)
@@ -120,35 +122,35 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
     return embedding_matrix
 
 
-def judger(label_true, y_predict):
+def judger(l1, l2, l3, p1, p2, p3):
     result = 0
-    l1, l2, l3 = label_true
-    p1, p2, p3 = y_predict
-    p2[p2 > 0.5] = 1
-    p2[p2 < 0.5] = 0
-    p3[p3 > 0.5] = 1
-    p3[p3 < 0.5] = 0
+    # l1, l2, l3 = label_true
+    # p1, p2, p3 = y_predict
+    # p2[p2 > 0.5] = 1
+    # p2[p2 < 0.5] = 0
+    # p3[p3 > 0.5] = 1
+    # p3[p3 < 0.5] = 0
     # p1 = np.reshape(p1, (-1,))
     # p2 = np.reshape(p2, (-1,))
     # p3 = np.reshape(p3, (-1,))
-    for i in range(len(y_predict)):
-        yp = round(p1[i][0])
+    for i in range(len(l1)):
+        yp = round(p1[i])
         dp = p2[i][0]
         lp = p3[i][0]
 
-        yt = l1[i][0]
+        yt = l1[i]
         dt = l2[i][0]
         lt = l3[i][0]
 
         sc = 0
         if dt == 1:
-            if dp ==1:
+            if dp == 1:
                 sc = 1
         elif lt == 1:
-            if lp==1:
+            if lp == 1:
                 sc = 1
         else:
-            v1 =yt
+            v1 = yt
             v2 = yp
             v = abs(np.log(v1 + 1) - np.log(v2 + 1))
             if v <= 0.2:
@@ -165,14 +167,15 @@ def judger(label_true, y_predict):
                 sc = 0
         sc = sc * 1.0
         result += sc
-    return result / len(y_predict)
+    return result / len(l1)
 
 
 class ImprisonCallback(Callback):
-    def __init__(self, predict_batch_size=1024, include_on_batch=False):
+    def __init__(self, predict_batch_size=1024, include_on_batch=False, data_test=None, ):
         super(ImprisonCallback, self).__init__()
         self.predict_batch_size = predict_batch_size
         self.include_on_batch = include_on_batch
+        self.data_test = data_test
 
     def on_batch_begin(self, batch, logs={}):
         pass
@@ -190,5 +193,112 @@ class ImprisonCallback(Callback):
         if (self.validation_data):
             y_predict = self.model.predict(self.validation_data[0],
                                            batch_size=self.predict_batch_size)
-            label = self.validation_data[1], self.validation_data[2], self.validation_data[3]
-            logs['avg_f1_score_val'] = judger(label, y_predict)
+            label = self.validation_data[1]
+            p1, p2, p3 = class2imp(y_predict)
+            if (self.data_test):
+                label, l2, l3 = self.data_test
+            else:
+                label, l2, l3=class2imp(label)
+
+            logs['avg_f1_score_val'] = judger(l1=label, l2=l2, l3=l3, p1=p1, p2=p2, p3=p3)
+
+
+covert = {1: 1,
+          2: 2,
+          3: 3,
+          4: 4,
+          5: 6,
+          6: 8,
+          7: 10,
+          8: 12,
+          9: 15,
+          10: 18,
+          11: 23,
+          12: 28,
+          13: 35,
+          14: 43,
+          15: 53,
+          16: 66,
+          17: 80,
+          18: 98,
+          19: 121,
+          20: 148,
+          21: 182,
+          22: 223,
+          23: 273,
+          0: 0,
+          }
+new_covert = {v: k for k, v in covert.items()}
+
+
+def class2imp(predict):
+    predict = [c.argmax() for c in predict]
+    p1 = np.zeros(shape=(len(predict),), dtype=np.int)
+    p2 = np.zeros(shape=(len(predict), 1), dtype=np.int)
+    p3 = np.zeros(shape=(len(predict), 1), dtype=np.int)
+    for i, t in enumerate(predict):
+        if t == 24:
+            p2[i][0] = 1
+        elif t == 23:
+            p3[i][0] = 1
+        else:
+            p1[i] = covert[t]
+    return p1,p2,p3
+
+def imp2class(time_label, death_label, life_label):
+    arr = np.zeros(shape=(time_label.shape[0],), dtype=np.int)
+    for i, time in enumerate(time_label):
+
+        if death_label[i] == 1:
+            arr[i] = 24
+        elif life_label[i] == 1:
+            arr[i] = 25
+        elif time <= 0:
+            arr[i] = new_covert[0]
+        elif time <= 1:
+            arr[i] = new_covert[1]
+        elif time <= 2:
+            arr[i] = new_covert[2]
+        elif time <= 3:
+            arr[i] = new_covert[3]
+        elif time <= 4:
+            arr[i] = new_covert[4]
+        elif time <= 6:
+            arr[i] = new_covert[6]
+        elif time < 8:
+            arr[i] = new_covert[8]
+        elif time < 10:
+            arr[i] = new_covert[10]
+        elif time < 13:
+            arr[i] = new_covert[12]
+        elif time <= 16:
+            arr[i] = new_covert[15]
+        elif time <= 20:
+            arr[i] = new_covert[18]
+        elif time < 25:
+            arr[i] = new_covert[23]
+        elif time <= 31:
+            arr[i] = new_covert[28]
+        elif time <= 38:
+            arr[i] = new_covert[35]
+        elif time <= 47:
+            arr[i] = new_covert[43]
+        elif time <= 58:
+            arr[i] = new_covert[53]
+        elif time <= 72:
+            arr[i] = new_covert[66]
+        elif time <= 88:
+            arr[i] = new_covert[80]
+        elif time <= 108:
+            arr[i] = new_covert[98]
+        elif time <= 133:
+            arr[i] = new_covert[121]
+        elif time <= 163:
+            arr[i] = new_covert[148]
+        elif time <= 200:
+            arr[i] = new_covert[182]
+        elif time <= 245:
+            arr[i] = new_covert[223]
+        elif time <= 300:
+            arr[i] = new_covert[273]
+    return arr
