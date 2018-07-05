@@ -199,9 +199,8 @@ class ImprisonCallback(Callback):
                 label, l2, l3 = self.data_test
             else:
                 label, l2, l3=class2imp(label)
-
             logs['avg_f1_score_val'] = judger(l1=label, l2=l2, l3=l3, p1=p1, p2=p2, p3=p3)
-
+            print(logs['avg_f1_score_val'])
 
 covert = {1: 1,
           2: 2,
@@ -239,7 +238,7 @@ def class2imp(predict):
     for i, t in enumerate(predict):
         if t == 24:
             p2[i][0] = 1
-        elif t == 23:
+        elif t == 25:
             p3[i][0] = 1
         else:
             p1[i] = covert[t]
@@ -248,7 +247,6 @@ def class2imp(predict):
 def imp2class(time_label, death_label, life_label):
     arr = np.zeros(shape=(time_label.shape[0],), dtype=np.int)
     for i, time in enumerate(time_label):
-
         if death_label[i] == 1:
             arr[i] = 24
         elif life_label[i] == 1:
