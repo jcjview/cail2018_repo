@@ -4,7 +4,7 @@ input_file = "../process.csv"
 SEP = ","
 w2vpath = '../baike.128.no_truncate.glove.txt'
 embedding_matrix_path = './matrix_glove.npy'
-kernel_name = "bgru_cnn"
+kernel_name = "bgru2"
 word_index_path = "worddict.pkl"
 TRAIN_HDF5 = "train_hdf5.h5"
 import h5py
@@ -54,28 +54,30 @@ class F1ScoreCallback(Callback):
             print("macro f1_score %.4f " % f1)
             f2 = f1_score(self.validation_data[1], y_predict, average='micro')
             print("micro f1_score %.4f " % f2)
-            avgf1=(f1 + f2) / 2
+            avgf1 = (f1 + f2) / 2
             print("avg_f1_score %.4f " % (avgf1))
-            logs['avg_f1_score_val'] =avgf1
+            logs['avg_f1_score_val'] = avgf1
 
 
 def get_model(embedding_matrix, nb_words):
     input_tensor = keras.layers.Input(shape=(MAX_TEXT_LENGTH,))
     words_embedding_layer = keras.layers.Embedding(MAX_FEATURES, embedding_dims,
-                                                   # weights=[embedding_matrix],
+                                                   weights=[embedding_matrix],
                                                    input_length=MAX_TEXT_LENGTH,
-                                                   trainable=False)
+                                                   trainable=True)
     # seq_embedding_layer = keras.layers.Bidirectional(keras.layers.GRU(256, recurrent_dropout=dr))
-    seq_embedding_layer = keras.layers.Bidirectional(keras.layers.CuDNNGRU(256,return_sequences=True))
-    x = seq_embedding_layer(keras.layers.SpatialDropout1D(0.2)(words_embedding_layer(input_tensor)))
-    x = keras.layers.Conv1D(128, kernel_size=2, padding="valid", kernel_initializer="he_uniform")(x)
-    avg_pool = keras.layers.GlobalAveragePooling1D()(x)
-    max_pool = keras.layers.GlobalMaxPooling1D()(x)
-    x = keras.layers.concatenate([avg_pool, max_pool])
-    output_layer = keras.layers.Dense(202, activation="sigmoid")(x)
+    x = words_embedding_layer(input_tensor)
+    x = keras.layers.SpatialDropout1D(0.2)(x)
+    x = keras.layers.Bidirectional(keras.layers.CuDNNGRU(256, return_sequences=True))(x)
+    x = keras.layers.Dropout(dr)(x)
+    x = keras.layers.Bidirectional(keras.layers.CuDNNGRU(256))(x)
+    x = keras.layers.BatchNormalization()(x)
+    x = keras.layers.Dense(256, activation="relu")(x)
+    x = keras.layers.Dropout(dr)(x)
+    output_layer = keras.layers.Dense(class_num, activation="softmax")(x)
     model = keras.models.Model(input_tensor, output_layer)
-    # model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=["accuracy"])
-    # model.summary()
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=["accuracy"])
+    model.summary()
     return model
 
 
@@ -98,7 +100,7 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
         return np.load(Embed_npy)
     print('Indexing word vectors')
     embeddings_index = {}
-    file_line = 300000#get_num_lines(Emed_path)
+    file_line = get_num_lines(Emed_path)
     print('lines ', file_line)
     with open(Emed_path, encoding='utf-8') as f:
         for line in tqdm(f, total=file_line):
@@ -137,16 +139,17 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
     return embedding_matrix
 
 
-df = pd.read_csv(input_file, compression='bz2', encoding="utf-8")
+df = pd.read_csv(input_file, encoding="utf-8")
 text = df['text'].values
 label = df['accu_label'].values
 from sklearn.preprocessing import LabelEncoder
+
 # encode class values as integers
 encoder = LabelEncoder()
 encoded_Y = encoder.fit_transform(label)
 # convert integers to dummy variables (one hot encoding)
-y = keras.utils.to_categorical(encoded_Y,num_classes=class_num)
-print('y shape',y.shape)
+y = keras.utils.to_categorical(encoded_Y, num_classes=class_num)
+print('y shape', y.shape)
 from keras.preprocessing.sequence import pad_sequences
 from keras.preprocessing.text import Tokenizer
 
@@ -154,20 +157,22 @@ tokenizer = Tokenizer(num_words=MAX_FEATURES)
 tokenizer.fit_on_texts(list(text))
 list_tokenized_text = tokenizer.texts_to_sequences(text)
 X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
-print('x shape',X_train.shape)
+print('x shape', X_train.shape)
 nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
 print("nb_words", nb_words)
+embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
+outh5file = h5py.File(TRAIN_HDF5, 'w')
+outh5file.create_dataset('train_token', data=X_train)
+outh5file.create_dataset('train_label', data=y)
 
 # outh5file = h5py.File(TRAIN_HDF5, 'r')
 # X_train = outh5file['train_token']
-# # test = outh5file['test_token']
+# #test = outh5file['test_token']
 # y = outh5file['train_label']
-
-X_train=np.array(X_train,copy=True)
-y=np.array(y,copy=True)
-embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
+# X_train=np.array(X_train,copy=True)
+# y=np.array(y,copy=True)
 # embedding_matrix1 = np.load(embedding_matrix_path)
-nb_words = MAX_FEATURES
+# nb_words = MAX_FEATURES
 
 seed = 20180426
 cv_folds = 4
@@ -181,16 +186,10 @@ import time
 
 timeStr = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
 for ind_tr, ind_te in skf.split(X_train, y):
-    # x_train = X_train[:155000]
-    # y_train = y[:155000]
-
-    # x_val = X_train[155000:]
-    # y_val = y[155000:]
     x_train = X_train[ind_tr]
     x_val = X_train[ind_te]
     y_train = y[ind_tr]
     y_val = y[ind_te]
-
     print('x_train shape', x_train.shape)
     print('x_val shape', x_val.shape)
     print('y_train shape', y_train.shape)
@@ -199,13 +198,13 @@ for ind_tr, ind_te in skf.split(X_train, y):
     early_stopping = EarlyStopping(monitor='val_loss', patience=10, verbose=1)
     bst_model_path = kernel_name + '_weight_%d_%s.h5' % (count, timeStr)
     csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
-    model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val', mode='max',
-                                       save_best_only=True, verbose=1, save_weights_only=True)
+    model_checkpoint = ModelCheckpoint(bst_model_path, monitor='val_loss',
+                                       save_best_only=True, verbose=1, save_weights_only=False)
     hist = model.fit(x_train, y_train,
                      validation_data=(x_val, y_val),
-                     epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
+                     epochs=fit_epoch, batch_size=fit_batch_size, shuffle=False,
                      verbose=1,
-                     callbacks=[F1ScoreCallback(),early_stopping, model_checkpoint ]
+                     callbacks=[F1ScoreCallback(), early_stopping, model_checkpoint]
                      )
     predict = model.predict(x_val, batch_size=1024)
     pred_oob[ind_te] = predict
@@ -222,7 +221,7 @@ for ind_tr, ind_te in skf.split(X_train, y):
     # print(macro_f1/2+micro_f1/2)
 
     count += 1
-    break
+    # break
 pred_oob[pred_oob > 0.5] = 1
 pred_oob[pred_oob < 0.5] = 0
 

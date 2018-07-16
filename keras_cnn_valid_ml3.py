@@ -38,10 +38,41 @@ class_num = 202
 law_class_num = 183
 time_class_num = 9
 
+def judger(label_true,y_predict):
+    result = 0
+    for i in range(len(y_predict)):
+        imp=label_true[i]
+        y=y_predict[i]
+        sc = 0
+        if imp == -2:
+            if y < -1:
+                sc = 1
+        elif imp == -1:
+            if -1 < y < 0:
+                sc = 1
+        else:
+            v1 = imp
+            v2 = round(y)
+            v = abs(np.log(v1 + 1) - np.log(v2 + 1))
+            if v <= 0.2:
+                sc = 1
+            elif v <= 0.4:
+                sc = 0.8
+            elif v <= 0.6:
+                sc = 0.6
+            elif v <= 0.8:
+                sc = 0.4
+            elif v <= 1.0:
+                sc = 0.2
+            else:
+                sc = 0
+        sc = sc * 1.0
+        result += sc
+    return result / len(y_predict)
 
-class F1ScoreCallback(Callback):
+class ImprisonCallback(Callback):
     def __init__(self, predict_batch_size=1024, include_on_batch=False):
-        super(F1ScoreCallback, self).__init__()
+        super(ImprisonCallback, self).__init__()
         self.predict_batch_size = predict_batch_size
         self.include_on_batch = include_on_batch
 
@@ -61,15 +92,34 @@ class F1ScoreCallback(Callback):
         if (self.validation_data):
             y_predict = self.model.predict(self.validation_data[0],
                                            batch_size=self.predict_batch_size)
-            y_predict[y_predict >= 0.5] = 1
-            y_predict[y_predict < 0.5] = 0
-            f1 = f1_score(self.validation_data[1], y_predict, average='macro')
-            print("macro f1_score %.4f " % f1)
-            f2 = f1_score(self.validation_data[1], y_predict, average='micro')
-            print("micro f1_score %.4f " % f2)
-            avgf1 = (f1 + f2) / 2
-            # print("avg_f1_score %.4f " % (avgf1))
-            logs['avg_f1_score_val'] = avgf1
+            result=0
+            for imp in self.validation_data[1],y in y_predict:
+                sc=0
+                if imp==-2:
+                    if y < -1:
+                        sc = 1
+                elif imp==-1:
+                    if -1< y < 0:
+                        sc = 1
+                else:
+                    v1 = imp
+                    v2 = y
+                    v = abs(np.log(v1 + 1) - np.log(v2 + 1))
+                    if v <= 0.2:
+                        sc = 1
+                    elif v <= 0.4:
+                        sc = 0.8
+                    elif v <= 0.6:
+                        sc = 0.6
+                    elif v <= 0.8:
+                        sc = 0.4
+                    elif v <= 1.0:
+                        sc = 0.2
+                    else:
+                        sc = 0
+                sc = sc * 1.0
+                result += sc
+            logs['avg_f1_score_val'] = result/len(y_predict)
 
 
 def get_model(embedding_matrix=None):
@@ -118,18 +168,16 @@ def get_model(embedding_matrix=None):
     x = keras.layers.Dense(300, activation='relu')(x)
     x = keras.layers.Dropout(0.2)(x)
     x = keras.layers.BatchNormalization()(x)
-    # output_layer = keras.layers.Dense(class_num, activation="sigmoid")(x)
-    # output_law = keras.layers.Dense(law_class_num, activation="sigmoid")(x)
-    output_layer = keras.layers.Dense(time_class_num, activation="softmax")(x)
+    output_layer = keras.layers.Dense(1, activation="sigmoid")(x)
 
     model = keras.models.Model(input_tensor, output_layer)
     # loss1 = 'binary_crossentropy'
-    loss2 = 'categorical_crossentropy'
+    loss2 = 'mse'
     model.compile(loss=loss2, optimizer='adam', metrics=["accuracy"])
     model.summary()
-    model_json = model.to_json()
-    with open("cnn_model3.json", "w") as json_file:
-        json_file.write(model_json)
+    # model_json = model.to_json()
+    # with open("cnn_model3.json", "w") as json_file:
+    #     json_file.write(model_json)
     return model
 
 
@@ -208,7 +256,10 @@ from sklearn.preprocessing import MultiLabelBinarizer
 # print('law y shape', y.shape)
 
 time_label = df['time_label'].values
-y = keras.utils.to_categorical(time_label, num_classes=time_class_num)
+time_label[time_label==-1]=-3
+time_label[time_label==-2]=-1
+time_label[time_label==-3]=-2
+y = time_label
 print('y shape', y.shape)
 
 if (os.path.exists(TRAIN_HDF5)):
@@ -288,38 +339,17 @@ bst_model_path = 'cnn_weigh3.h5'#kernel_name + '_weight_valid_%s.h5' % timeStr
 csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
 model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val', mode='max',
                                    save_best_only=True, verbose=1, save_weights_only=True)
-# hist = model.fit(x_train, y_train,
-#                  validation_data=(x_val, y_val),
-#                  epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
-#                  verbose=1,
-#                  callbacks=[F1ScoreCallback(), early_stopping, model_checkpoint]
-#                  )
+hist = model.fit(x_train, y_train,
+                 validation_data=(x_val, y_val),
+                 epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
+                 verbose=1,
+                 callbacks=[ImprisonCallback(), early_stopping, model_checkpoint]
+                 )
 model.load_weights(bst_model_path)
 predict = model.predict(x_test, batch_size=1024)
 predict1 = np.array(predict, copy=True)
-predict1[predict1 > 0.5] = 1
-predict1[predict1 < 0.5] = 0
-macro_f1 = f1_score(y_test, predict1, average="macro")
-micro_f1 = f1_score(y_test, predict1, average="micro")
-print("macro_f1", macro_f1)
-print("micro_f1", micro_f1)
-print(macro_f1 / 2 + micro_f1 / 2)
 
-def predict2tag(predictions):
-    y_pred = np.array(predictions, copy=True)
-    for index, x in enumerate(y_pred):
-        x[x > 0.5] = 1
-        if x.max() < 1:
-            x[x == x.max()] = 1
-    y_pred[y_pred < 1] = 0
-    return y_pred
-
-y_pred = predict2tag(predict)
-f1 = f1_score(y_test, y_pred, average='macro')
-print("macro f1_score %.4f " % f1)
-f2 = f1_score(y_test, y_pred, average='micro')
-print("micro f1_score %.4f " % f2)
-avgf1 = (f1 + f2) / 2
-print("avg_f1_score %.4f " % (avgf1))
+j=judger(y_test,predict1)
+print("judger",j)
 
 

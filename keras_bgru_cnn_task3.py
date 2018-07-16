@@ -1,10 +1,19 @@
-# input_file = "../input/process_10k.csv"
+"""
+# Create a directory and mount Google Drive using that directory.
+!mkdir -p drive
+!google-drive-ocamlfuse drive
+
+print('Files in Drive:')
+!ls -lh drive/colab
+!mv drive/colab/input/baike.txt.bz2 ./datalab/
+!bzip2 -d ./datalab/baike.txt.bz2
+!ls ./datalab/
+"""
 input_file = "../process.csv"
-# SEP = "\t"
 SEP = ","
-w2vpath = '../baike.128.no_truncate.glove.txt'
+w2vpath = '../baike.128.truncate.glove.txt'
 embedding_matrix_path = './matrix_glove.npy'
-kernel_name = "bgru_cnn"
+kernel_name = "bgru_cnn_task3"
 word_index_path = "worddict.pkl"
 TRAIN_HDF5 = "train_hdf5.h5"
 import h5py
@@ -15,16 +24,16 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint, Callback
 from sklearn.metrics import f1_score
 
 MAX_TEXT_LENGTH = 300
-MAX_FEATURES = 100000
+nb_words=MAX_FEATURES = 100000
 embedding_dims = 128
 dr = 0.2
 dropout_p = 0.1
 fit_batch_size = 256
-fit_epoch = 22
+fit_epoch = 30
 
 class_num = 202
-from keras import backend as K
-
+law_class_num = 183
+time_class_num = 9
 
 class F1ScoreCallback(Callback):
     def __init__(self, predict_batch_size=1024, include_on_batch=False):
@@ -46,36 +55,46 @@ class F1ScoreCallback(Callback):
     def on_epoch_end(self, epoch, logs={}):
         logs['avg_f1_score_val'] = float('-inf')
         if (self.validation_data):
-            y_predict = self.model.predict(self.validation_data[0],
+            y_predict, predict2, predict3 = self.model.predict(self.validation_data[0],
                                            batch_size=self.predict_batch_size)
             y_predict[y_predict >= 0.5] = 1
             y_predict[y_predict < 0.5] = 0
             f1 = f1_score(self.validation_data[1], y_predict, average='macro')
-            print("macro f1_score %.4f " % f1)
+            # print("macro f1_score %.4f " % f1)
             f2 = f1_score(self.validation_data[1], y_predict, average='micro')
-            print("micro f1_score %.4f " % f2)
+            # print("micro f1_score %.4f " % f2)
             avgf1=(f1 + f2) / 2
-            print("avg_f1_score %.4f " % (avgf1))
+            # print("avg_f1_score %.4f " % (avgf1))
             logs['avg_f1_score_val'] =avgf1
+
 
 
 def get_model(embedding_matrix, nb_words):
     input_tensor = keras.layers.Input(shape=(MAX_TEXT_LENGTH,))
     words_embedding_layer = keras.layers.Embedding(MAX_FEATURES, embedding_dims,
-                                                   # weights=[embedding_matrix],
+                                                   weights=[embedding_matrix],
                                                    input_length=MAX_TEXT_LENGTH,
                                                    trainable=False)
-    # seq_embedding_layer = keras.layers.Bidirectional(keras.layers.GRU(256, recurrent_dropout=dr))
+    # seq_embedding_layer = keras.layers.Bidirectional(keras.layers.GRU(256, recurrent_dropout=dr,return_sequences=True))
     seq_embedding_layer = keras.layers.Bidirectional(keras.layers.CuDNNGRU(256,return_sequences=True))
+
     x = seq_embedding_layer(keras.layers.SpatialDropout1D(0.2)(words_embedding_layer(input_tensor)))
     x = keras.layers.Conv1D(128, kernel_size=2, padding="valid", kernel_initializer="he_uniform")(x)
     avg_pool = keras.layers.GlobalAveragePooling1D()(x)
     max_pool = keras.layers.GlobalMaxPooling1D()(x)
     x = keras.layers.concatenate([avg_pool, max_pool])
-    output_layer = keras.layers.Dense(202, activation="sigmoid")(x)
-    model = keras.models.Model(input_tensor, output_layer)
-    # model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=["accuracy"])
-    # model.summary()
+    output_layer = keras.layers.Dense(class_num, activation="softmax")(x)
+    output_law = keras.layers.Dense(law_class_num, activation="softmax")(x)
+    output_time = keras.layers.Dense(time_class_num, activation="softmax")(x)
+
+    model = keras.models.Model(input_tensor, [output_layer, output_law, output_time])
+    loss1 = 'categorical_crossentropy'
+    mse = 'mae'
+    model.compile(loss=[loss1, loss1, loss1], optimizer='adam', metrics=["accuracy"])
+    model.summary()
+    model_json = model.to_json()
+    with open("bgru_cnn_model.json", "w") as json_file:
+        json_file.write(model_json)
     return model
 
 
@@ -98,7 +117,7 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
         return np.load(Embed_npy)
     print('Indexing word vectors')
     embeddings_index = {}
-    file_line = 300000#get_num_lines(Emed_path)
+    file_line = get_num_lines(Emed_path)
     print('lines ', file_line)
     with open(Emed_path, encoding='utf-8') as f:
         for line in tqdm(f, total=file_line):
@@ -137,99 +156,85 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
     return embedding_matrix
 
 
-df = pd.read_csv(input_file, compression='bz2', encoding="utf-8")
+df = pd.read_csv(input_file, encoding="utf-8")
 text = df['text'].values
 label = df['accu_label'].values
-from sklearn.preprocessing import LabelEncoder
-# encode class values as integers
-encoder = LabelEncoder()
-encoded_Y = encoder.fit_transform(label)
-# convert integers to dummy variables (one hot encoding)
-y = keras.utils.to_categorical(encoded_Y,num_classes=class_num)
+y = keras.utils.to_categorical(label,num_classes=class_num)
 print('y shape',y.shape)
+
+law_label=df['law_label'].values
+law_label_y = keras.utils.to_categorical(law_label,num_classes=law_class_num)
+print('y shape',law_label_y.shape)
+
+time_label=df['time_label'].values
+time_label_y = keras.utils.to_categorical(time_label,num_classes=time_class_num)
+print('y shape',time_label_y.shape)
+
+print('y type',type(time_label[0]))
+
 from keras.preprocessing.sequence import pad_sequences
 from keras.preprocessing.text import Tokenizer
-
-tokenizer = Tokenizer(num_words=MAX_FEATURES)
-tokenizer.fit_on_texts(list(text))
+# tokenizer = Tokenizer(num_words=MAX_FEATURES)
+# tokenizer.fit_on_texts(list(text))
+import pickle
+with open('tokenizer.pickle', 'rb') as handle:
+    tokenizer = pickle.load(handle)
 list_tokenized_text = tokenizer.texts_to_sequences(text)
 X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
 print('x shape',X_train.shape)
 nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
 print("nb_words", nb_words)
-
-# outh5file = h5py.File(TRAIN_HDF5, 'r')
-# X_train = outh5file['train_token']
-# # test = outh5file['test_token']
-# y = outh5file['train_label']
-
-X_train=np.array(X_train,copy=True)
-y=np.array(y,copy=True)
 embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
-# embedding_matrix1 = np.load(embedding_matrix_path)
-nb_words = MAX_FEATURES
 
-seed = 20180426
-cv_folds = 4
-from sklearn.model_selection import KFold
 
-skf = KFold(n_splits=cv_folds, random_state=seed, shuffle=True)
-pred_oob = np.zeros(shape=y.shape)
-# print(pred_oob.shape)
-count = 0
 import time
 
 timeStr = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
-for ind_tr, ind_te in skf.split(X_train, y):
-    # x_train = X_train[:155000]
-    # y_train = y[:155000]
 
-    # x_val = X_train[155000:]
-    # y_val = y[155000:]
-    x_train = X_train[ind_tr]
-    x_val = X_train[ind_te]
-    y_train = y[ind_tr]
-    y_val = y[ind_te]
+x_train = X_train[:155000]
+x_test = X_train[-33000:]
+x_val=X_train[-50000:-33000]
+y_train = y[:155000]
+y_test = y[-33000:]
+y_train2 = law_label_y[:155000]
+y_test2 = law_label_y[-33000:]
+y_train3 = time_label_y[:155000]
+y_test3 = time_label_y[-33000:]
 
-    print('x_train shape', x_train.shape)
-    print('x_val shape', x_val.shape)
-    print('y_train shape', y_train.shape)
-    print('y_val shape', y_val.shape)
-    model = get_model(embedding_matrix1, nb_words)
-    early_stopping = EarlyStopping(monitor='val_loss', patience=10, verbose=1)
-    bst_model_path = kernel_name + '_weight_%d_%s.h5' % (count, timeStr)
-    csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
-    model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val', mode='max',
-                                       save_best_only=True, verbose=1, save_weights_only=True)
-    hist = model.fit(x_train, y_train,
-                     validation_data=(x_val, y_val),
-                     epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
-                     verbose=1,
-                     callbacks=[F1ScoreCallback(),early_stopping, model_checkpoint ]
-                     )
-    predict = model.predict(x_val, batch_size=1024)
-    pred_oob[ind_te] = predict
-    # predict[predict > 0.5] = 1
-    # predict[predict < 0.5] = 0
-    # y_label_true = np.argmax(y_val)
-    # print('y_label_true',y_label_true.shape)
-    # predict_label_true = np.argmax(predict)
-    # print('predict_label_true', predict.shape)
-    # macro_f1 = f1_score(y_label_true, predict_label_true, average="macro")
-    # micro_f1 = f1_score(y_label_true, predict_label_true, average="micro")
-    # print("macro_f1", macro_f1)
-    # print("micro_f1", micro_f1)
-    # print(macro_f1/2+micro_f1/2)
+y_val = y[-50000:-33000]
+y_val2 = law_label_y[-50000:-33000]
+y_val3 = time_label_y[-50000:-33000]
 
-    count += 1
-    break
-pred_oob[pred_oob > 0.5] = 1
-pred_oob[pred_oob < 0.5] = 0
-
-# y_label_true = np.argmax(y)
-# predict_label_true =  np.argmax(pred_oob)
-macro_f1 = f1_score(y, pred_oob, average="macro")
-micro_f1 = f1_score(y, pred_oob, average="micro")
+print('x_train shape', x_train.shape)
+print('x_val shape', x_test.shape)
+print('y_train shape', y_train.shape)
+print('y_val shape', y_test.shape)
+model = get_model(embedding_matrix1, nb_words)
+early_stopping = EarlyStopping(monitor='avg_f1_score_val', mode='max',patience=5, verbose=1)
+bst_model_path = kernel_name + '_weight_valid_%s.h5' % timeStr
+csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
+model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val',mode='max',
+                                   save_best_only=True, verbose=1, save_weights_only=True)
+hist = model.fit(x_train, [y_train,y_train2,y_train3],
+                 validation_data=(x_test, [y_test, y_test2, y_test3]),
+                 epochs=fit_epoch, batch_size=fit_batch_size, shuffle=True,
+                 verbose=1,
+                 callbacks=[F1ScoreCallback(),early_stopping, model_checkpoint ]
+                 )
+model.load_weights(bst_model_path)
+predict,predict2,predict3 = model.predict(x_val, batch_size=1024)
+predict[predict > 0.5] = 1
+predict[predict < 0.5] = 0
+macro_f1 = f1_score(y_val, predict, average="macro")
+micro_f1 = f1_score(y_val, predict, average="micro")
 print("macro_f1", macro_f1)
 print("micro_f1", micro_f1)
 print(macro_f1 / 2 + micro_f1 / 2)
+
+predict2[predict2 > 0.5] = 1
+predict2[predict2 < 0.5] = 0
+macro_f1 = f1_score(y_val2, predict2, average="macro")
+micro_f1 = f1_score(y_val2, predict2, average="micro")
+print("2 macro_f1", macro_f1)
+print("2 micro_f1", micro_f1)
+print('2',macro_f1 / 2 + micro_f1 / 2)

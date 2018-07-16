@@ -1,18 +1,13 @@
-"""
-# Create a directory and mount Google Drive using that directory.
-!mkdir -p drive
-!google-drive-ocamlfuse drive
+# input_file = "../input/process_10k.csv"
+from keras import Input
+from keras.layers import Embedding, SpatialDropout1D, Conv1D, GlobalAveragePooling1D, LSTM, BatchNormalization, merge, \
+    Dense, PReLU, Dropout
 
-print('Files in Drive:')
-!ls -lh drive/colab
-!mv drive/colab/input/baike.txt.bz2 ./datalab/
-!bzip2 -d ./datalab/baike.txt.bz2
-!ls ./datalab/
-"""
 input_file = "../process.csv"
+# SEP = "\t"
 SEP = ","
-w2vpath = '../Vectors51.txt'
-embedding_matrix_path = './matrix_glove51.npy'
+w2vpath = '../baike.128.no_truncate.glove.txt'
+embedding_matrix_path = './matrix_glove.npy'
 kernel_name = "bgru_cnn"
 word_index_path = "worddict.pkl"
 TRAIN_HDF5 = "train_hdf5.h5"
@@ -24,8 +19,8 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint, Callback
 from sklearn.metrics import f1_score
 
 MAX_TEXT_LENGTH = 300
-nb_words=MAX_FEATURES = 100000
-embedding_dims = 200
+MAX_FEATURES = 100000
+embedding_dims = 128
 dr = 0.2
 dropout_p = 0.1
 fit_batch_size = 256
@@ -68,24 +63,53 @@ class F1ScoreCallback(Callback):
 
 
 def get_model(embedding_matrix, nb_words):
-    input_tensor = keras.layers.Input(shape=(MAX_TEXT_LENGTH,))
-    words_embedding_layer = keras.layers.Embedding(MAX_FEATURES, embedding_dims,
-                                                   weights=[embedding_matrix],
-                                                   input_length=MAX_TEXT_LENGTH,
-                                                   trainable=False)
-    # seq_embedding_layer = keras.layers.Bidirectional(keras.layers.GRU(256, recurrent_dropout=dr,return_sequences=True))
-    seq_embedding_layer = keras.layers.Bidirectional(keras.layers.CuDNNGRU(256,return_sequences=True))
+    input_tensor = Input(shape=(MAX_TEXT_LENGTH,), dtype='int32')
+    embedding_layer = Embedding(MAX_FEATURES,
+                                embedding_dims,
+                                weights=[embedding_matrix],
+                                input_length=MAX_TEXT_LENGTH,
+                                trainable=False)
+    embedded_sequences = embedding_layer(input_tensor)
+    x = SpatialDropout1D(0.2)(embedded_sequences)
 
-    x = seq_embedding_layer(keras.layers.SpatialDropout1D(0.2)(words_embedding_layer(input_tensor)))
-    x = keras.layers.Conv1D(128, kernel_size=2, padding="valid", kernel_initializer="he_uniform")(x)
-    avg_pool = keras.layers.GlobalAveragePooling1D()(x)
-    max_pool = keras.layers.GlobalMaxPooling1D()(x)
-    x = keras.layers.concatenate([avg_pool, max_pool])
+    xconv = Conv1D(filters=128,
+                   kernel_size=3,
+                   padding='same',
+                   activation='relu')(x)
+    xconv = GlobalAveragePooling1D()(xconv)
+    xlstm = LSTM(350, dropout_W=0.2, dropout_U=0.2)(x)
+    xlstm = BatchNormalization()(xlstm)
+
+    x = merge([xconv, xlstm], mode='concat')
+
+    x = Dense(500)(x)
+    x = PReLU()(x)
+    x1 = BatchNormalization()(x)
+
+    x = Dense(500)(x1)
+    x = PReLU()(x)
+    x2 = BatchNormalization()(x)
+    x = merge([x1, x2], mode='sum')
+
+    x = Dense(500)(x)
+    x = PReLU()(x)
+    x3 = BatchNormalization()(x)
+    x = merge([x1, x2, x3], mode='sum')
+
+    x = Dense(500)(x)
+    x = PReLU()(x)
+    x4 = BatchNormalization()(x)
+    x = merge([x1, x2, x3, x4], mode='sum')
+
+    x = Dense(500)(x)
+    x = PReLU()(x)
+    x5 = BatchNormalization()(x)
+    x = merge([x1, x2, x3, x4, x5], mode='sum')
+    # x = concatenate([x1, x2, x3, x4], axis=1)
+    x = Dropout(0.2)(x)
     output_layer = keras.layers.Dense(class_num, activation="softmax")(x)
     model = keras.models.Model(input_tensor, output_layer)
-    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=["accuracy",
-                                                                              # f1_score_metrics
-                                                                              ])
+    model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=["accuracy"])
     model.summary()
     return model
 
@@ -148,47 +172,52 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
     return embedding_matrix
 
 
-df = pd.read_csv(input_file, compression='bz2', encoding="utf-8")
-text = df['text'].values
-label = df['accu_label'].values
-y = keras.utils.to_categorical(label,num_classes=class_num)
-print('y shape',y.shape)
-from keras.preprocessing.sequence import pad_sequences
-from keras.preprocessing.text import Tokenizer
-tokenizer = Tokenizer(num_words=MAX_FEATURES)
-tokenizer.fit_on_texts(list(text))
-list_tokenized_text = tokenizer.texts_to_sequences(text)
-X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
-print('x shape',X_train.shape)
-nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
-print("nb_words", nb_words)
-outh5file = h5py.File(TRAIN_HDF5, 'w')
-outh5file.create_dataset('train_token', data=X_train)
-outh5file.create_dataset('train_label', data=y)
-embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
+# df = pd.read_csv(input_file, encoding="utf-8")
+# text = df['text'].values
+# label = df['accu_label'].values
+# from sklearn.preprocessing import LabelEncoder
+# # encode class values as integers
+# encoder = LabelEncoder()
+# encoded_Y = encoder.fit_transform(label)
+# # convert integers to dummy variables (one hot encoding)
+# y = keras.utils.to_categorical(encoded_Y,num_classes=class_num)
+# print('y shape',y.shape)
+# from keras.preprocessing.sequence import pad_sequences
+# from keras.preprocessing.text import Tokenizer
+# tokenizer = Tokenizer(num_words=MAX_FEATURES)
+# tokenizer.fit_on_texts(list(text))
+# list_tokenized_text = tokenizer.texts_to_sequences(text)
+# X_train = pad_sequences(list_tokenized_text, maxlen=MAX_TEXT_LENGTH)
+# print('x shape',X_train.shape)
+# nb_words = min(MAX_FEATURES, len(tokenizer.word_index))
+# print("nb_words", nb_words)
+# outh5file = h5py.File(TRAIN_HDF5, 'w')
+# outh5file.create_dataset('train_token', data=X_train)
+# outh5file.create_dataset('train_label', data=y)
 
-# outh5file = h5py.File(TRAIN_HDF5, 'r')
-# X_train = outh5file['train_token']
-# y = outh5file['train_label']
-# X_train=np.array(X_train,copy=True)
-# y=np.array(y,copy=True)
-# embedding_matrix1 = np.load(embedding_matrix_path)
+outh5file = h5py.File(TRAIN_HDF5, 'r')
+X_train = outh5file['train_token']
+y = outh5file['train_label']
 
+X_train=np.array(X_train,copy=True)
+y=np.array(y,copy=True)
+# embedding_matrix1 = get_embedding_matrix(tokenizer.word_index, w2vpath, embedding_matrix_path)
+embedding_matrix1 = np.load(embedding_matrix_path)
+nb_words=MAX_FEATURES
 import time
 
 timeStr = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
 
 x_train = X_train[:155000]
-y_train = y[:155000]
-
 x_val = X_train[155000:]
+y_train = y[:155000]
 y_val = y[155000:]
 print('x_train shape', x_train.shape)
 print('x_val shape', x_val.shape)
 print('y_train shape', y_train.shape)
 print('y_val shape', y_val.shape)
 model = get_model(embedding_matrix1, nb_words)
-early_stopping = EarlyStopping(monitor='avg_f1_score_val',mode='max',patience=5, verbose=1)
+early_stopping = EarlyStopping(monitor='val_loss', patience=12, verbose=1)
 bst_model_path = kernel_name + '_weight_valid_%s.h5' % timeStr
 csv_logger = keras.callbacks.CSVLogger('./log/' + bst_model_path + '_log.csv', append=True, separator=';')
 model_checkpoint = ModelCheckpoint(bst_model_path, monitor='avg_f1_score_val',mode='max',

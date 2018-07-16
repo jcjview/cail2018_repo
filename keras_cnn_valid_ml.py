@@ -3,15 +3,15 @@ from keras import Input
 from keras.layers import Embedding, SpatialDropout1D, Conv1D, GlobalAveragePooling1D, LSTM, BatchNormalization, merge, \
     Dense, PReLU, Dropout
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 # no pre embeded 0.7668
-input_file = "../process.csv"
+input_file = "../process_big.csv.bz2"
 # SEP = "\t"
 SEP = ","
-w2vpath = '../Vectors51.txt'
+w2vpath = '../vectors.txt'
 # w2vpath = '../baike.128.no_truncate.glove.txt'
 embedding_matrix_path = './matrix_glove.npy'
-kernel_name = "cnn1"
+kernel_name = "cnnbig1"
 word_index_path = "worddict.pkl"
 TRAIN_HDF5 = "train_hdf5_200k_200.h5"
 
@@ -187,7 +187,7 @@ def get_embedding_matrix(word_index, Emed_path, Embed_npy):
     return embedding_matrix
 
 
-df = pd.read_csv(input_file, encoding="utf-8")
+df = pd.read_csv(input_file,compression='infer', encoding="utf-8")
 text = df['text'].values
 label = df['accu_label'].values
 from sklearn.preprocessing import MultiLabelBinarizer
@@ -250,33 +250,53 @@ import time
 timeStr = time.strftime("%Y-%m-%d_%H:%M:%S", time.localtime())
 from sklearn.utils import class_weight
 
-# idx = np.random.permutation(len(y))
-# X_train=X_train[idx]
-# y=y[idx]
-# law_label_y=law_label_y[idx]
-# time_label_y=time_label_y[idx]
-split1 = -17492
-split2 = -32508
-split = split1 + split2
-x_train = X_train[:split]
-y_train = y[:split]
-y_train2 = law_label_y[:split]
-y_train3 = time_label_y[:split]
+idx = np.random.permutation(len(y))
+X_train=X_train[idx]
+y=y[idx]
+split1=int(len(y)*0.8)
+split2 = int(len(y)*0.9)
+print("12",split1,split2)
 
-x_val = X_train[split:split2]
-y_val = y[split:split2]
-y_val2 = law_label_y[split:split2]
-y_val3 = time_label_y[split:split2]
+x_train = X_train[:split1]
+y_train = y[:split1]
+y_train3 = time_label_y[:split1]
+
+x_val = X_train[split1:split2]
+y_val = y[split1:split2]
+y_val3 = time_label_y[split1:split2]
 
 x_test = X_train[split2:]
 y_test = y[split2:]
-y_test2 = law_label_y[split2:]
 y_tese3 = time_label_y[split2:]
+
+# # idx = np.random.permutation(len(y))
+# # X_train=X_train[idx]
+# # y=y[idx]
+# # law_label_y=law_label_y[idx]
+# # time_label_y=time_label_y[idx]
+# split1 = -17492
+# split2 = -32508
+# split = split1 + split2
+# x_train = X_train[:split]
+# y_train = y[:split]
+# y_train2 = law_label_y[:split]
+# y_train3 = time_label_y[:split]
+#
+# x_val = X_train[split:split2]
+# y_val = y[split:split2]
+# y_val2 = law_label_y[split:split2]
+# y_val3 = time_label_y[split:split2]
+#
+# x_test = X_train[split2:]
+# y_test = y[split2:]
+# y_test2 = law_label_y[split2:]
+# y_tese3 = time_label_y[split2:]
 
 print('x_train shape', x_train.shape)
 print('x_val shape', x_val.shape)
 print('y_train shape', y_train.shape)
 print('y_val shape', y_val.shape)
+print('y_test shape', y_test.shape)
 model = get_model(embedding_matrix1, nb_words)
 early_stopping = EarlyStopping(monitor='avg_f1_score_val', mode='max', patience=5, verbose=1)
 # bst_model_path = kernel_name + '_weight_valid_%s.h5' % timeStr
